@@ -27,7 +27,7 @@ Throughout, the content must stay **grounded in reviewed source material**, and 
 
 ## Constraints and rules the system must follow
 
-### SEO best practices (from `assets/seo-best-practices.md`)
+### SEO best practices (from `../provided/assets/seo-best-practices.md`)
 
 - Get the primary keyword from the content idea.
 - Include the primary keyword in the article title.
@@ -44,7 +44,7 @@ Throughout, the content must stay **grounded in reviewed source material**, and 
 - Include one contextually relevant image if the content needs one.
 - Keep claims grounded in reviewed source material.
 
-### Channel formatting rules (from `assets/channel-formatting-rules.md`)
+### Channel formatting rules (from `../provided/assets/channel-formatting-rules.md`)
 
 **LinkedIn Post:**
 - Use the PAS copywriting structure: problem, agitation, solution.
@@ -71,7 +71,7 @@ Throughout, the content must stay **grounded in reviewed source material**, and 
 - Write like you are speaking to a smart, busy reader who trusts you to send something useful.
 - Keep the newsletter between 250 and 600 words.
 
-### Content evaluation rubric (from `assets/content-evaluation-rubric.md`)
+### Content evaluation rubric (from `../provided/assets/content-evaluation-rubric.md`)
 
 For each draft, evaluate against these criteria:
 
@@ -143,9 +143,9 @@ Submit the completed testing evidence table from the project page with your proj
 ## Reference resources provided in this project folder
 
 **Local assets (use these first):**
-- `assets/seo-best-practices.md` — SEO rules for article generation
-- `assets/channel-formatting-rules.md` — formatting rules for LinkedIn, X, and email newsletter outputs
-- `assets/content-evaluation-rubric.md` — evaluation criteria for the review and revision loop
+- `../provided/assets/seo-best-practices.md` — SEO rules for article generation
+- `../provided/assets/channel-formatting-rules.md` — formatting rules for LinkedIn, X, and email newsletter outputs
+- `../provided/assets/content-evaluation-rubric.md` — evaluation criteria for the review and revision loop
 
 **External resources you can use while designing and building:**
 
