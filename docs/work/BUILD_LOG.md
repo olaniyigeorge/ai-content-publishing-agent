@@ -35,8 +35,8 @@ None yet — no running system. The test plan is written into `backend/tests/` i
 
 ### Open decisions
 
-- Claude model selection for v1 (which model for which step) — to be recorded in `backend/claude/models.py` as the model router, and used later in the reflection sheet's model-choice question
-- Which scraping/retrieval tool the `research` handler uses (Firecrawl, Crawl4AI, direct HTTP) — the handler owns this, §3.2's `retrieval_method` records it
+- ~~Claude model selection for v1~~ **Decided 2026-09-14:** tiered by step. Sonnet for `generate` and `evaluate` (quality-sensitive, drives the revision loop and the rubric scoring). Haiku for `research` (source summarization/excerpt selection) and `adapt` (channel formatting is mostly rule application, not creative quality). Recorded in `backend/claude/models.py` as the model router.
+- ~~Which scraping/retrieval tool~~ **Decided 2026-09-14:** Firecrawl API. Handles JS-rendered pages without custom extraction code; requires `FIRECRAWL_API_KEY` in env. `sources.retrieval_method = 'url_provided'` rows will additionally note the tool used if needed later.
 - Whether frontend uses Supabase Storage for intake image uploads (lib/supabase.ts with anon key) or handles media another way — only affects one frontend lib, no architecture impact
 - Whether to generate frontend types from FastAPI OpenAPI spec or hand-write them (§9.4) — hand-write is fine for v1 if backed by a shape-matching assertion in tests
 
