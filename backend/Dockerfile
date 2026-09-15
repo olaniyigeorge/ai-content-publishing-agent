@@ -19,11 +19,16 @@ COPY shared ./shared
 COPY worker ./worker
 COPY alembic ./alembic
 COPY alembic.ini ./
+COPY render-entrypoint.sh ./
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . \
+    && chmod +x render-entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# docker-compose overrides this with an explicit `command:` per service
+# (see docker-compose.yml) — this default is for single-container hosts
+# like Render's free tier, which runs api + worker together.
+CMD ["./render-entrypoint.sh"]
