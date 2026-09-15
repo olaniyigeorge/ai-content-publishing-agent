@@ -27,6 +27,7 @@ export type ContentFormat = "plain_text" | "html";
 export type AdaptationStatus = "draft" | "approved" | "queued" | "published" | "failed";
 export type QueueStatus = "queued" | "processing" | "published" | "failed" | "dead_letter" | "cancelled";
 export type StageEventStatus = "started" | "succeeded" | "failed";
+export type JobType = "research" | "plan" | "generate" | "evaluate" | "adapt" | "publish";
 
 export interface MeResponse {
   id: string;
@@ -163,6 +164,38 @@ export interface RewriteAccepted {
   status: string;
 }
 
+export interface DraftManualEditIn {
+  title?: string | null;
+  body_markdown: string;
+}
+
+export interface ClaudeUsageOut {
+  id: string;
+  content_request_id: string | null;
+  job_id: string | null;
+  job_type: JobType | null;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  created_at: string;
+}
+
+export interface UsageModelBreakdown {
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  call_count: number;
+}
+
+export interface UsageSummaryOut {
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  call_count: number;
+  by_model: Record<string, UsageModelBreakdown>;
+}
+
 export interface ContentRequestDetail {
   request: ContentRequestOut;
   attachments: IntakeAttachmentOut[];
@@ -173,4 +206,5 @@ export interface ContentRequestDetail {
   adaptations: ChannelAdaptationOut[];
   publishing_queue: PublishingQueueOut[];
   stage_events: StageEventOut[];
+  usage: ClaudeUsageOut[];
 }

@@ -6,6 +6,7 @@ from shared.errors import NotFound
 from shared.models import (
     ArticleDraftOut,
     ChannelAdaptationOut,
+    ClaudeUsageOut,
     ContentRequestDetail,
     ContentRequestOut,
     EvaluationOut,
@@ -14,6 +15,8 @@ from shared.models import (
     PublishingQueueOut,
     SourceOut,
     StageEventOut,
+    UsageModelBreakdown,
+    UsageSummaryOut,
 )
 
 
@@ -82,6 +85,14 @@ def get_content_request_detail(request_id: str) -> ContentRequestDetail:
         .execute()
         .data
     )
+    usage_rows = (
+        db.table("claude_usage")
+        .select("*")
+        .eq("content_request_id", request_id)
+        .order("created_at")
+        .execute()
+        .data
+    )
 
     return ContentRequestDetail(
         request=ContentRequestOut(**request_row),
@@ -93,6 +104,33 @@ def get_content_request_detail(request_id: str) -> ContentRequestDetail:
         adaptations=[ChannelAdaptationOut(**a) for a in adaptations],
         publishing_queue=[PublishingQueueOut(**q) for q in enriched_queue_items],
         stage_events=[StageEventOut(**e) for e in stage_events],
+        usage=[ClaudeUsageOut(**u) for u in usage_rows],
+    )
+
+
+def get_usage_summary() -> UsageSummaryOut:
+    """Account-wide Claude spend, across every content request — the "and
+    total" half of "how many tokens spent on each pass and total". Per-request
+    spend is the `usage` list already returned by get_content_request_detail;
+    this is the one number that can't be derived from a single request."""
+    rows = get_supabase().table("claude_usage").select("model,input_tokens,output_tokens,cost_usd").execute().data
+
+    by_model: dict[str, UsageModelBreakdown] = {}
+    for row in rows:
+        entry = by_model.setdefault(
+            row["model"], UsageModelBreakdown(input_tokens=0, output_tokens=0, cost_usd=0.0, call_count=0)
+        )
+        entry.input_tokens += row["input_tokens"]
+        entry.output_tokens += row["output_tokens"]
+        entry.cost_usd += row["cost_usd"]
+        entry.call_count += 1
+
+    return UsageSummaryOut(
+        total_input_tokens=sum(r["input_tokens"] for r in rows),
+        total_output_tokens=sum(r["output_tokens"] for r in rows),
+        total_cost_usd=sum(r["cost_usd"] for r in rows),
+        call_count=len(rows),
+        by_model=by_model,
     )
 
 

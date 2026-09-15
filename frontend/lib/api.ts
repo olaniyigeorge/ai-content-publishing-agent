@@ -1,4 +1,5 @@
 import type {
+  ArticleDraftOut,
   ContentRequestCreate,
   ContentRequestDetail,
   ContentRequestOut,
@@ -7,6 +8,7 @@ import type {
   PublishingQueueOut,
   RewriteAccepted,
   ReviewDecision,
+  UsageSummaryOut,
 } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -109,6 +111,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ instructions: instructions?.trim() || null }),
     }),
+
+  editDraft: (draftId: string, bodyMarkdown: string, title?: string | null) =>
+    request<ArticleDraftOut>(`/api/drafts/${draftId}`, {
+      method: "PUT",
+      body: JSON.stringify({ body_markdown: bodyMarkdown, title: title ?? null }),
+    }),
+
+  getUsageSummary: () => request<UsageSummaryOut>("/api/usage/summary"),
 
   uploadAsset: async (file: File): Promise<UploadResult> => {
     const formData = new FormData();

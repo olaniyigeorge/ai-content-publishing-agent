@@ -11,6 +11,7 @@ import time
 import traceback
 
 from app.config import get_settings
+from claude.usage import usage_context
 from db.client import get_supabase
 from shared.enums import (
     JobReferenceType,
@@ -95,8 +96,10 @@ def _mirror_publish_failure(job: dict, exhausted: bool, error: str, next_attempt
 def process_one_job(job: dict) -> None:
     db = get_supabase()
     handler = HANDLERS[job["job_type"]]
+    request_id = _resolve_request_id(job)
     try:
-        handler(job)
+        with usage_context(content_request_id=request_id, job_id=job["id"], job_type=job["job_type"]):
+            handler(job)
         db.table("jobs").update({"status": JobStatus.SUCCEEDED.value}).eq("id", job["id"]).execute()
     except Exception as exc:  # noqa: BLE001 — every failure must be captured, not crash the loop
         error = f"{exc}\n{traceback.format_exc(limit=3)}"
@@ -109,7 +112,6 @@ def process_one_job(job: dict) -> None:
             }
         ).eq("id", job["id"]).execute()
 
-        request_id = _resolve_request_id(job)
         if request_id:
             db.table("stage_events").insert(
                 {

@@ -11,6 +11,7 @@ from typing import Any
 import anthropic
 
 from app.config import get_settings
+from claude import usage
 
 CLIENT_TIMEOUT_SECONDS = 120.0
 """No timeout is set by default: a hung call would block a worker job (and
@@ -38,6 +39,9 @@ def chat(
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user_message}],
+    )
+    usage.record(
+        model=model, input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens
     )
     return "".join(block.text for block in response.content if block.type == "text")
 
@@ -71,6 +75,9 @@ def structured_chat(
         ],
         tool_choice={"type": "tool", "name": tool_name},
         messages=[{"role": "user", "content": user_message}],
+    )
+    usage.record(
+        model=model, input_tokens=response.usage.input_tokens, output_tokens=response.usage.output_tokens
     )
     for block in response.content:
         if block.type == "tool_use" and block.name == tool_name:

@@ -6,17 +6,20 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { LoadingLine } from "@/components/spinner";
-import type { ContentRequestOut } from "@/lib/types";
+import type { ContentRequestOut, UsageSummaryOut } from "@/lib/types";
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<ContentRequestOut[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usage, setUsage] = useState<UsageSummaryOut | null>(null);
 
   useEffect(() => {
     api
       .listRequests()
       .then(setRequests)
       .catch((err) => setError(err instanceof ApiError ? err.message : "failed to load requests"));
+    // Best-effort — a usage-summary hiccup shouldn't block the requests list.
+    api.getUsageSummary().then(setUsage).catch(() => undefined);
   }, []);
 
   return (
@@ -24,7 +27,14 @@ export default function RequestsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Content requests</h1>
-          <p className="mt-1 text-sm text-muted">Track every request from idea to published.</p>
+          <p className="mt-1 text-sm text-muted">
+            Track every request from idea to published.
+            {usage && usage.call_count > 0 && (
+              <span className="ml-2 text-muted/80">
+                · {usage.call_count} Claude call{usage.call_count === 1 ? "" : "s"} so far, ${usage.total_cost_usd.toFixed(4)} total
+              </span>
+            )}
+          </p>
         </div>
         <Link
           href="/requests/new"

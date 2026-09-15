@@ -16,6 +16,7 @@ from shared.enums import (
     ContentFormat,
     DraftStatus,
     EvaluatedBy,
+    JobType,
     QueueStatus,
     RequestStatus,
     ReviewDecision,
@@ -177,6 +178,11 @@ class DraftRewriteIn(BaseModel):
     instructions: str | None = None
 
 
+class DraftManualEditIn(BaseModel):
+    title: str | None = None
+    body_markdown: str
+
+
 class ChannelAdaptationRewriteIn(BaseModel):
     instructions: str | None = None
 
@@ -199,6 +205,36 @@ class StageEventOut(BaseModel):
     created_at: datetime
 
 
+# ---- Claude usage / cost -----------------------------------------------------
+
+
+class ClaudeUsageOut(BaseModel):
+    id: UUID
+    content_request_id: UUID | None
+    job_id: UUID | None
+    job_type: JobType | None
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    created_at: datetime
+
+
+class UsageModelBreakdown(BaseModel):
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    call_count: int
+
+
+class UsageSummaryOut(BaseModel):
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    call_count: int
+    by_model: dict[str, UsageModelBreakdown] = {}
+
+
 # ---- Full request detail -------------------------------------------------------
 
 
@@ -212,3 +248,4 @@ class ContentRequestDetail(BaseModel):
     adaptations: list[ChannelAdaptationOut]
     publishing_queue: list[PublishingQueueOut]
     stage_events: list[StageEventOut]
+    usage: list[ClaudeUsageOut]

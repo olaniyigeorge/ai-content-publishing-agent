@@ -57,28 +57,29 @@ def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str
     )
     request_id = request_row["id"]
 
-    attachment_rows = []
+    # One bulk insert instead of one round-trip per attachment — on a
+    # multi-attachment request this is the difference between N Supabase
+    # round-trips and one, which is most of what made submission feel slow
+    # on multi-source-URL / multi-file requests.
+    attachment_payload = []
     for attachment in body.attachments:
         # image/file attachments only carry storage_path from the upload step
         # — resolve the public URL now so the frontend can always just read
-        # `url`, regardless of attachment type.
+        # `url`, regardless of attachment type. get_public_url() is a local
+        # string-construction call, not a network request.
         url = attachment.url
         if not url and attachment.storage_path:
             url = db.storage.from_(BUCKET).get_public_url(attachment.storage_path)
-        attachment_rows.append(
-            db.table("intake_attachments")
-            .insert(
-                {
-                    "content_request_id": request_id,
-                    "type": attachment.type.value,
-                    "url": url,
-                    "storage_path": attachment.storage_path,
-                    "description": attachment.description,
-                }
-            )
-            .execute()
-            .data[0]
+        attachment_payload.append(
+            {
+                "content_request_id": request_id,
+                "type": attachment.type.value,
+                "url": url,
+                "storage_path": attachment.storage_path,
+                "description": attachment.description,
+            }
         )
+    attachment_rows = db.table("intake_attachments").insert(attachment_payload).execute().data if attachment_payload else []
 
     db.table("stage_events").insert(
         {

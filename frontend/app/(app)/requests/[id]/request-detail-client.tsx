@@ -10,14 +10,21 @@ import {
   History,
   Info,
   Paperclip,
+  PencilLine,
   Sparkles,
 } from "lucide-react";
+import { ThinkingOrb } from "thinking-orbs";
 import { api, ApiError } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
-import { LoadingLine, Spinner } from "@/components/spinner";
+import { LoadingLine } from "@/components/spinner";
 import { QUEUE_STATUS_HELP } from "@/lib/queue-status";
 import type { ChannelAdaptationOut, ContentRequestDetail, ReviewDecision } from "@/lib/types";
+
+const REWRITE_TIMEOUT_MS = 90_000;
+type AwaitingRewrite =
+  | { kind: "draft"; id: string; startedAt: number }
+  | { kind: "adaptation"; beforeId: string; startedAt: number };
 
 const MAX_RUBRIC_SCORE = 5;
 
@@ -33,10 +40,17 @@ export function RequestDetailClient({ id }: { id: string }) {
   const [rewritingId, setRewritingId] = useState<string | null>(null);
   const [rewriteInstructions, setRewriteInstructions] = useState("");
   const [rewritePending, setRewritePending] = useState<string | null>(null);
+  const [awaitingRewrite, setAwaitingRewrite] = useState<AwaitingRewrite | null>(null);
   const [expandedChannelHistory, setExpandedChannelHistory] = useState<string | null>(null);
   const [collapsedDraftIds, setCollapsedDraftIds] = useState<Set<string>>(new Set());
   const [showIntakeContext, setShowIntakeContext] = useState(false);
   const [showQueueHelp, setShowQueueHelp] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   function toggleDraftCollapsed(draftId: string) {
     setCollapsedDraftIds((prev) => {
@@ -85,6 +99,7 @@ export function RequestDetailClient({ id }: { id: string }) {
       await api.rewriteDraft(draftId, rewriteInstructions);
       setRewritingId(null);
       setRewriteInstructions("");
+      setAwaitingRewrite({ kind: "draft", id: draftId, startedAt: Date.now() });
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "failed to queue rewrite");
@@ -100,11 +115,38 @@ export function RequestDetailClient({ id }: { id: string }) {
       await api.rewriteAdaptation(adaptationId, rewriteInstructions);
       setRewritingId(null);
       setRewriteInstructions("");
+      setAwaitingRewrite({ kind: "adaptation", beforeId: adaptationId, startedAt: Date.now() });
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "failed to queue rewrite");
     } finally {
       setRewritePending(null);
+    }
+  }
+
+  function startEditingDraft(draftId: string, title: string, bodyMarkdown: string) {
+    setEditingDraftId(draftId);
+    setEditTitle(title);
+    setEditBody(bodyMarkdown);
+    setEditError(null);
+    setRewritingId(null);
+  }
+
+  async function handleSaveEdit(draftId: string) {
+    setEditError(null);
+    if (!editBody.trim()) {
+      setEditError("the article body can't be empty");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await api.editDraft(draftId, editBody, editTitle.trim() || undefined);
+      setEditingDraftId(null);
+      load();
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : "failed to save edit");
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -121,7 +163,7 @@ export function RequestDetailClient({ id }: { id: string }) {
 
   if (!detail) return <LoadingLine label="Loading request…" />;
 
-  const { request, sources, drafts, evaluations, human_reviews, adaptations, publishing_queue, stage_events } =
+  const { request, sources, drafts, evaluations, human_reviews, adaptations, publishing_queue, stage_events, usage } =
     detail;
 
   const evaluationsByDraft = new Map(evaluations.map((e) => [e.article_draft_id, e]));
@@ -205,6 +247,12 @@ export function RequestDetailClient({ id }: { id: string }) {
                   const isReviewable = REVIEWABLE_DRAFT_STATUSES.has(d.status) && !hasTerminalReview;
                   const expanded = expandedDraftId === d.id;
                   const cardCollapsed = collapsedDraftIds.has(d.id);
+                  const isBeingRewritten =
+                    awaitingRewrite?.kind === "draft" &&
+                    awaitingRewrite.id === d.id &&
+                    d.status !== "discarded" &&
+                    Date.now() - awaitingRewrite.startedAt < REWRITE_TIMEOUT_MS;
+                  const isEditing = editingDraftId === d.id;
 
                   return (
                     <div key={d.id} className="glow-card rounded-xl border border-surface-border bg-surface-card p-4 transition-shadow duration-200">
@@ -217,45 +265,68 @@ export function RequestDetailClient({ id }: { id: string }) {
                           <span className="mt-0.5 shrink-0 text-muted">
                             {cardCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                           </span>
-                          <p className="min-w-0 font-medium text-foreground">
+                          <span className="min-w-0 font-medium text-foreground">
                             <span className="block truncate">{d.title}</span>
-                            <span className="font-normal text-muted">
-                              option {d.option_label} · v{d.version}
-                            </span>
-                          </p>
+                            <VersionPill optionLabel={d.option_label} version={d.version} />
+                          </span>
                         </button>
-                        <StatusBadge status={d.status} />
+                        <div className="flex shrink-0 items-center gap-2">
+                          {isBeingRewritten && <RewritingIndicator />}
+                          <StatusBadge status={d.status} />
+                        </div>
                       </div>
 
                       {!cardCollapsed && (
                         <>
                           {evaluation && <EvaluationSummary evaluation={evaluation} />}
 
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <IconButton
-                              icon={expanded ? ChevronUp : ChevronDown}
-                              label={expanded ? "Hide full draft" : "Show full draft"}
-                              onClick={() => setExpandedDraftId(expanded ? null : d.id)}
+                          {isEditing ? (
+                            <ManualEditControl
+                              title={editTitle}
+                              body={editBody}
+                              onTitleChange={setEditTitle}
+                              onBodyChange={setEditBody}
+                              onSave={() => handleSaveEdit(d.id)}
+                              onCancel={() => setEditingDraftId(null)}
+                              saving={editSaving}
+                              error={editError}
                             />
-                            <CopyButton text={d.body_markdown} />
-                            <IconButton
-                              icon={Sparkles}
-                              label="Rewrite with AI"
-                              onClick={() => {
-                                setRewritingId(rewritingId === d.id ? null : d.id);
-                                setRewriteInstructions("");
-                              }}
-                              active={rewritingId === d.id}
-                            />
-                          </div>
-                          {expanded && (
-                            <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-base p-3 text-sm text-muted">
-                              {d.body_markdown}
-                            </pre>
+                          ) : (
+                            <>
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <IconButton
+                                  icon={expanded ? ChevronUp : ChevronDown}
+                                  label={expanded ? "Hide full draft" : "Show full draft"}
+                                  onClick={() => setExpandedDraftId(expanded ? null : d.id)}
+                                />
+                                <CopyButton text={d.body_markdown} />
+                                <IconButton
+                                  icon={Sparkles}
+                                  label="Rewrite with AI"
+                                  onClick={() => {
+                                    setRewritingId(rewritingId === d.id ? null : d.id);
+                                    setRewriteInstructions("");
+                                  }}
+                                  active={rewritingId === d.id}
+                                />
+                                {isReviewable && (
+                                  <IconButton
+                                    icon={PencilLine}
+                                    label="Edit manually"
+                                    onClick={() => startEditingDraft(d.id, d.title, d.body_markdown)}
+                                  />
+                                )}
+                              </div>
+                              {expanded && (
+                                <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-surface-base p-3 text-sm text-muted">
+                                  {d.body_markdown}
+                                </pre>
+                              )}
+                            </>
                           )}
                         </>
                       )}
-                      {!cardCollapsed && rewritingId === d.id && (
+                      {!cardCollapsed && !isEditing && rewritingId === d.id && (
                         <RewriteControl
                           instructions={rewriteInstructions}
                           onChange={setRewriteInstructions}
@@ -354,11 +425,19 @@ export function RequestDetailClient({ id }: { id: string }) {
               <EmptyNote text="channel content is prepared after a draft is approved" />
             ) : (
               <div className="grid gap-4 sm:grid-cols-3">
-                {groupAdaptationsByChannel(adaptations).map(({ latest, previous }) => (
+                {groupAdaptationsByChannel(adaptations).map(({ latest, previous }) => {
+                  const isBeingRewritten =
+                    awaitingRewrite?.kind === "adaptation" &&
+                    awaitingRewrite.beforeId === latest.id &&
+                    Date.now() - awaitingRewrite.startedAt < REWRITE_TIMEOUT_MS;
+                  return (
                   <div key={latest.id} className="rounded-lg border border-surface-border bg-surface-card p-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium capitalize text-foreground">{latest.channel}</span>
-                      <StatusBadge status={latest.status} />
+                      <div className="flex items-center gap-2">
+                        {isBeingRewritten && <RewritingIndicator />}
+                        <StatusBadge status={latest.status} />
+                      </div>
                     </div>
                     {latest.formatting_check?.auto_trimmed ? (
                       <p className="mt-1 text-xs text-amber-600">auto-trimmed to fit channel limit</p>
@@ -415,7 +494,8 @@ export function RequestDetailClient({ id }: { id: string }) {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Section>
@@ -474,11 +554,15 @@ export function RequestDetailClient({ id }: { id: string }) {
           </Section>
         </div>
 
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside className="lg:sticky lg:top-6 lg:self-start space-y-6">
           <Section title="Pipeline activity">
             <div className="glow-card rounded-xl border border-surface-border bg-surface-card p-4">
               <PipelineTimeline events={stage_events} humanReviews={human_reviews} drafts={drafts} />
             </div>
+          </Section>
+
+          <Section title="API usage">
+            <UsagePanel usage={usage} expanded={showUsage} onToggle={() => setShowUsage((v) => !v)} />
           </Section>
         </aside>
       </div>
@@ -547,6 +631,134 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function VersionPill({ optionLabel, version }: { optionLabel: string; version: number }) {
+  return (
+    <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+      option {optionLabel} · v{version}
+    </span>
+  );
+}
+
+function RewritingIndicator() {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted">
+      <ThinkingOrb state="composing" size={20} aria-label="Rewriting in progress" />
+      Rewriting…
+    </span>
+  );
+}
+
+function ManualEditControl({
+  title,
+  body,
+  onTitleChange,
+  onBodyChange,
+  onSave,
+  onCancel,
+  saving,
+  error,
+}: {
+  title: string;
+  body: string;
+  onTitleChange: (v: string) => void;
+  onBodyChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border border-surface-border bg-surface-base p-3">
+      <p className="text-xs text-muted">
+        Edit this option directly — paste in anything you liked from another draft's Copy button above.
+      </p>
+      <input
+        value={title}
+        onChange={(e) => onTitleChange(e.target.value)}
+        placeholder="title"
+        disabled={saving}
+        className="w-full rounded-md border border-surface-border bg-surface-card px-3 py-2 text-sm font-medium focus:border-primary focus:outline-none"
+      />
+      <textarea
+        value={body}
+        onChange={(e) => onBodyChange(e.target.value)}
+        rows={12}
+        disabled={saving}
+        className="w-full rounded-md border border-surface-border bg-surface-card px-3 py-2 font-mono text-xs focus:border-primary focus:outline-none"
+      />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={onSave}
+          disabled={saving}
+          className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:opacity-60"
+        >
+          {saving && <ThinkingOrb state="working" size={20} aria-label="Saving" />}
+          {saving ? "Saving…" : "Save as new version"}
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={saving}
+          className="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface-card-hover disabled:opacity-60"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UsagePanel({
+  usage,
+  expanded,
+  onToggle,
+}: {
+  usage: ContentRequestDetail["usage"];
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  if (usage.length === 0) {
+    return <EmptyNote text="no Claude calls logged yet" />;
+  }
+  const totalInput = usage.reduce((sum, u) => sum + u.input_tokens, 0);
+  const totalOutput = usage.reduce((sum, u) => sum + u.output_tokens, 0);
+  const totalCost = usage.reduce((sum, u) => sum + u.cost_usd, 0);
+
+  return (
+    <div className="glow-card rounded-xl border border-surface-border bg-surface-card p-4 text-sm">
+      <div className="flex items-center justify-between">
+        <span className="font-medium text-foreground">${totalCost.toFixed(4)}</span>
+        <span className="text-xs text-muted">
+          {totalInput.toLocaleString()} in / {totalOutput.toLocaleString()} out · {usage.length} call
+          {usage.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="mt-2 flex items-center gap-1 text-xs text-primary hover:underline"
+      >
+        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        {expanded ? "hide passes" : "show every pass"}
+      </button>
+      {expanded && (
+        <ul className="mt-2 space-y-1.5">
+          {usage.map((u) => (
+            <li key={u.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate text-muted">
+                {u.job_type ?? "—"} <span className="text-muted/60">({u.model})</span>
+              </span>
+              <span className="shrink-0 text-foreground">
+                {u.input_tokens.toLocaleString()}/{u.output_tokens.toLocaleString()} · ${u.cost_usd.toFixed(4)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function RewriteControl({
   instructions,
   onChange,
@@ -576,7 +788,7 @@ function RewriteControl({
           disabled={pending}
           className="flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:opacity-60"
         >
-          {pending && <Spinner size="small" className="text-white" />}
+          {pending && <ThinkingOrb state="composing" size={20} aria-label="Rewriting" />}
           {pending ? "Rewriting…" : "Submit"}
         </button>
         <button

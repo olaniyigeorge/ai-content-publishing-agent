@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import adaptations, drafts, intake, publishing, requests, reviews, uploads
+from app.api import adaptations, drafts, intake, publishing, requests, reviews, uploads, usage
 from app.config import get_settings
 from auth import endpoints as auth_endpoints
 from db.client import get_supabase
@@ -37,6 +37,7 @@ app.include_router(publishing.router)
 app.include_router(uploads.router)
 app.include_router(drafts.router)
 app.include_router(adaptations.router)
+app.include_router(usage.router)
 
 
 @app.get("/health")
