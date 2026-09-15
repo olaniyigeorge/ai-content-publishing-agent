@@ -1,3 +1,9 @@
+TONE_GUIDANCE = """
+
+Voice: write like a person posting this themselves, not like an AI summarizing
+the article. Avoid em dashes; use commas or periods instead. Vary sentence
+length and don't lean on any one sentence pattern."""
+
 SYSTEM_BY_CHANNEL = {
     "linkedin": """Adapt the approved article into a LinkedIn post.
 
@@ -23,10 +29,16 @@ Rules (channel-formatting-rules.md):
 - Use no more than 1-2 relevant hashtags.
 - Only tag an account if the tag adds real value (usually: don't).
 
-Output plain text — no markdown syntax. Must fit in 280 characters. Do not
-introduce any claim not already in the source article. content_format must
-be "plain_text". formatting_check must include char_count, within_limit
-(<=280), and hashtag_count (<=2).""",
+HARD LIMIT: the content field must be 280 characters or fewer, counting every
+character including spaces, punctuation, and hashtags. This is a strict
+platform limit, not a guideline — count your output before finalizing it and
+cut anything necessary (a hashtag, a clause, an example) to stay at or under
+280. Never write a longer draft and rely on this being trimmed for you.
+
+Output plain text — no markdown syntax. Do not introduce any claim not
+already in the source article. content_format must be "plain_text".
+formatting_check must include char_count, within_limit (<=280), and
+hashtag_count (<=2).""",
     "newsletter": """Adapt the approved article into an email newsletter.
 
 Rules (channel-formatting-rules.md):
@@ -48,9 +60,20 @@ and subject_line.""",
 }
 
 
-def build_user_message(*, article_title: str, article_body_markdown: str, target_audience: str) -> str:
-    return (
-        f"Target audience: {target_audience}\n\n"
-        f"Approved article title: {article_title}\n\n"
-        f"Approved article body:\n{article_body_markdown}"
-    )
+def build_user_message(
+    *,
+    article_title: str,
+    article_body_markdown: str,
+    target_audience: str,
+    revision_instructions: str | None = None,
+    previous_content: str | None = None,
+) -> str:
+    parts = [
+        f"Target audience: {target_audience}",
+        f"Approved article title: {article_title}",
+        f"Approved article body:\n{article_body_markdown}",
+    ]
+    if revision_instructions:
+        parts.append(f"Rewrite instructions from the author: {revision_instructions}")
+        parts.append(f"Previous adaptation for this channel (improve on this, don't just repeat it):\n{previous_content}")
+    return "\n\n".join(parts)

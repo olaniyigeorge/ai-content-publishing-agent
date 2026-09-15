@@ -6,7 +6,7 @@ without a live Supabase project or network access.
 
 import uuid
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class _Result:
@@ -109,7 +109,7 @@ class _Query:
             for p in payloads:
                 row = deepcopy(p)
                 row.setdefault("id", str(uuid.uuid4()))
-                row.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+                row.setdefault("created_at", datetime.now(UTC).isoformat())
                 if self._op == "upsert":
                     existing_idx = next((i for i, r in enumerate(rows) if r.get("id") == row.get("id")), None)
                     if existing_idx is not None:

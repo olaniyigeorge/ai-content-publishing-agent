@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     otp_ttl_minutes: int = 10
     otp_max_attempts: int = 5
 
-    resend_api_key: str = ""
+    resend_api_key: str
     email_from_address: str = "email@from.com"
     email_from_name: str = "Koya Talent"
 

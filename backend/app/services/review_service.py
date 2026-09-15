@@ -3,7 +3,7 @@ runs without a human_reviews row — adapt is enqueued only on `approved`, and
 only from here.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from db.client import get_supabase
 from shared.enums import (
@@ -69,7 +69,7 @@ def submit_review(content_request_id: str, body: HumanReviewIn, reviewer_user_id
         .data[0]
     )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     db.table("stage_events").insert(
         {
             "content_request_id": content_request_id,

@@ -2,12 +2,13 @@
 (§6 refinement 3), rate limiting (§6 refinement 2). EDGE_CASES.md's auth
 tier-3 entries."""
 
+from datetime import UTC
+
 import bcrypt
+import pytest
 
 from auth import service as auth_service
 from shared.errors import NotAuthorized
-
-import pytest
 
 
 def test_request_code_is_silent_for_allowlisted_and_non_allowlisted_alike(fake_db, monkeypatch):
@@ -25,7 +26,7 @@ def test_request_code_is_silent_for_allowlisted_and_non_allowlisted_alike(fake_d
 
 
 def test_verify_code_rejects_wrong_code(fake_db, monkeypatch):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     user = fake_db.table("users").insert({"email": "a@koyatalent.com"}).execute().data[0]
     code_hash = bcrypt.hashpw(b"123456", bcrypt.gensalt()).decode()
@@ -33,7 +34,7 @@ def test_verify_code_rejects_wrong_code(fake_db, monkeypatch):
         {
             "user_id": user["id"],
             "code_hash": code_hash,
-            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            "expires_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
             "max_attempts": 5,
             "attempts": 0,
         }
@@ -44,7 +45,7 @@ def test_verify_code_rejects_wrong_code(fake_db, monkeypatch):
 
 
 def test_verify_code_succeeds_once_then_consumed_code_cannot_be_reused(fake_db):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     user = fake_db.table("users").insert({"email": "a@koyatalent.com"}).execute().data[0]
     code_hash = bcrypt.hashpw(b"123456", bcrypt.gensalt()).decode()
@@ -52,7 +53,7 @@ def test_verify_code_succeeds_once_then_consumed_code_cannot_be_reused(fake_db):
         {
             "user_id": user["id"],
             "code_hash": code_hash,
-            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            "expires_at": (datetime.now(UTC) + timedelta(minutes=10)).isoformat(),
             "max_attempts": 5,
             "attempts": 0,
         }
@@ -66,7 +67,7 @@ def test_verify_code_succeeds_once_then_consumed_code_cannot_be_reused(fake_db):
 
 
 def test_expired_code_is_rejected(fake_db):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     user = fake_db.table("users").insert({"email": "a@koyatalent.com"}).execute().data[0]
     code_hash = bcrypt.hashpw(b"123456", bcrypt.gensalt()).decode()
@@ -74,7 +75,7 @@ def test_expired_code_is_rejected(fake_db):
         {
             "user_id": user["id"],
             "code_hash": code_hash,
-            "expires_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
+            "expires_at": (datetime.now(UTC) - timedelta(minutes=1)).isoformat(),
             "max_attempts": 5,
             "attempts": 0,
         }

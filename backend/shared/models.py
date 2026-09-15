@@ -151,10 +151,39 @@ class PublishingQueueOut(BaseModel):
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Denormalized from channel_adaptations / article_drafts / content_requests
+    # so the publishing-queue list view doesn't need N follow-up requests just
+    # to show what a row actually is.
+    content_request_id: UUID | None = None
+    channel: Channel | None = None
+    content: str | None = None
+    content_format: ContentFormat | None = None
+    article_title: str | None = None
+    failure_reason: str | None = None
 
 
 class PublishingQueueScheduleIn(BaseModel):
     scheduled_for: datetime | None = None
+
+
+class PublishingQueueStatusIn(BaseModel):
+    status: QueueStatus
+
+
+# ---- Rewrite (regenerate with AI) ----------------------------------------------
+
+
+class DraftRewriteIn(BaseModel):
+    instructions: str | None = None
+
+
+class ChannelAdaptationRewriteIn(BaseModel):
+    instructions: str | None = None
+
+
+class RewriteAccepted(BaseModel):
+    job_id: UUID
+    status: str = "queued"
 
 
 # ---- Stage events -------------------------------------------------------------

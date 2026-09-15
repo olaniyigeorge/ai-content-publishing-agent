@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from app.services.request_state_service import maybe_finalize_request_status
 from db.client import get_supabase
 from worker.publishing_adapter import publish
 
@@ -20,10 +21,12 @@ def handle_publish(job: dict) -> None:
 
     publish(adaptation["channel"], adaptation["content"])  # raises PublishFailure on failure
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     db.table("publishing_queue").update(
         {"status": "published", "published_at": now, "updated_at": now, "last_error": None}
     ).eq("id", queue_id).execute()
     db.table("channel_adaptations").update({"status": "published", "updated_at": now}).eq(
         "id", adaptation["id"]
     ).execute()
+
+    maybe_finalize_request_status(adaptation["content_request_id"])

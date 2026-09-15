@@ -1,8 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import claude.service as claude_service
 from db.client import get_supabase
-from shared.enums import JobReferenceType, JobType, PipelineStage, RequestStatus, SourceStatus, StageEventStatus
+from shared.enums import (
+    JobReferenceType,
+    JobType,
+    PipelineStage,
+    RequestStatus,
+    SourceStatus,
+    StageEventStatus,
+)
 
 
 def handle_plan(job: dict) -> None:
@@ -46,7 +53,7 @@ def handle_plan(job: dict) -> None:
     ).execute()
 
     db.table("content_requests").update(
-        {"status": RequestStatus.DRAFTING.value, "updated_at": datetime.now(timezone.utc).isoformat()}
+        {"status": RequestStatus.DRAFTING.value, "updated_at": datetime.now(UTC).isoformat()}
     ).eq("id", request_id).execute()
 
     db.table("jobs").insert(

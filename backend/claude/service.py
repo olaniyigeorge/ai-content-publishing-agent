@@ -5,7 +5,12 @@ prompt builders directly.
 
 from claude.client import structured_chat
 from claude.models import model_for
-from claude.outputs import ADAPTATION_SCHEMA, EVALUATION_SCHEMA, PLAN_SCHEMA, SOURCE_SELECTION_SCHEMA
+from claude.outputs import (
+    ADAPTATION_SCHEMA,
+    EVALUATION_SCHEMA,
+    PLAN_SCHEMA,
+    SOURCE_SELECTION_SCHEMA,
+)
 from claude.prompts import adapt as adapt_prompts
 from claude.prompts import evaluate as evaluate_prompts
 from claude.prompts import generate as generate_prompts
@@ -80,12 +85,24 @@ def evaluate_draft(*, target_audience: str, draft_title: str, draft_body: str, s
     )
 
 
-def adapt_for_channel(*, channel: str, article_title: str, article_body_markdown: str, target_audience: str) -> dict:
+def adapt_for_channel(
+    *,
+    channel: str,
+    article_title: str,
+    article_body_markdown: str,
+    target_audience: str,
+    revision_instructions: str | None = None,
+    previous_content: str | None = None,
+) -> dict:
     return structured_chat(
         model=model_for(JobType.ADAPT),
-        system=adapt_prompts.SYSTEM_BY_CHANNEL[channel],
+        system=adapt_prompts.SYSTEM_BY_CHANNEL[channel] + adapt_prompts.TONE_GUIDANCE,
         user_message=adapt_prompts.build_user_message(
-            article_title=article_title, article_body_markdown=article_body_markdown, target_audience=target_audience
+            article_title=article_title,
+            article_body_markdown=article_body_markdown,
+            target_audience=target_audience,
+            revision_instructions=revision_instructions,
+            previous_content=previous_content,
         ),
         output_schema=ADAPTATION_SCHEMA,
         tool_name="adapt_for_channel",

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import claude.service as claude_service
 from db.client import get_supabase
@@ -96,7 +96,7 @@ def handle_generate(job: dict) -> None:
     ).execute()
 
     db.table("content_requests").update(
-        {"status": RequestStatus.EVALUATING.value, "updated_at": datetime.now(timezone.utc).isoformat()}
+        {"status": RequestStatus.EVALUATING.value, "updated_at": datetime.now(UTC).isoformat()}
     ).eq("id", request_id).execute()
 
     db.table("jobs").insert(

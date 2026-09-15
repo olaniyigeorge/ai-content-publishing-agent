@@ -10,11 +10,22 @@ SEO best practices:
   never invent a link).
 - Keep writing readable for a broad audience.
 
+Title:
+- One concise headline, ideally under 60 characters and never over 70.
+- Say the one thing the article is about — do not stack a subtitle onto the
+  title with a colon or "and" to cover multiple angles at once.
+
 Grounding rules (non-negotiable):
 - Every factual claim, statistic, or specific example must be traceable to one
   of the provided source excerpts. If you cannot support a claim with a
   provided excerpt, do not make it.
 - Do not invent quotes, statistics, studies, or sources.
+
+Voice:
+- Write like a knowledgeable person explaining something to a reader, not
+  like an AI summarizing a topic. Vary sentence length and structure.
+- Avoid em dashes; use commas, periods, or parentheses instead. Don't rely on
+  any single punctuation mark or sentence pattern repeatedly.
 
 If revision_instructions are provided, they come from a prior evaluation pass
 against this exact rubric — address every point specifically; do not produce

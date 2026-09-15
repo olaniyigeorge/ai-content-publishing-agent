@@ -9,7 +9,7 @@
 
 import random
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 
@@ -41,7 +41,7 @@ def _is_allowlisted(email: str) -> bool:
         return False
     # expires_at filtering done in-app since PostgREST `or_` above can't
     # cleanly combine with an `or(expires_at.is.null,expires_at.gt.now())` too.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     full_rows = (
         db.table("access_rules")
         .select("*")
@@ -54,7 +54,7 @@ def _is_allowlisted(email: str) -> bool:
 
 def _rate_limited(user_id: str) -> bool:
     db = get_supabase()
-    since = (datetime.now(timezone.utc) - timedelta(minutes=RATE_LIMIT_WINDOW_MINUTES)).isoformat()
+    since = (datetime.now(UTC) - timedelta(minutes=RATE_LIMIT_WINDOW_MINUTES)).isoformat()
     rows = (
         db.table("login_attempts")
         .select("id")
@@ -79,7 +79,10 @@ def request_code(email: str) -> None:
     endpoint returns the same generic message regardless of what happens
     here. Allowlist rejection and rate limiting are both silent."""
     email = _normalize_email(email)
+    print(f"request_code: email {email}")
+            
     if not _is_allowlisted(email):
+        print(f"request_code: email {email} not allowlisted, silently ignoring")
         return  # silent — do not create a user or attempt row for a non-allowlisted email
 
     user = _upsert_user(email)
@@ -89,7 +92,7 @@ def request_code(email: str) -> None:
     settings = get_settings()
     code = "".join(random.choices(string.digits, k=6))
     code_hash = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=settings.otp_ttl_minutes)).isoformat()
+    expires_at = (datetime.now(UTC) + timedelta(minutes=settings.otp_ttl_minutes)).isoformat()
 
     db = get_supabase()
     db.table("login_attempts").insert(
@@ -116,7 +119,7 @@ def verify_code(email: str, code: str) -> str:
         raise NotAuthorized("invalid or expired code")
     user = user_rows[0]
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     attempts = (
         db.table("login_attempts")
         .select("*")
@@ -156,7 +159,7 @@ def get_user_for_session(session_id: str) -> dict | None:
     if not rows:
         return None
     session = rows[0]
-    if datetime.fromisoformat(session["expires_at"]) < datetime.now(timezone.utc):
+    if datetime.fromisoformat(session["expires_at"]) < datetime.now(UTC):
         return None
     return session["users"]
 

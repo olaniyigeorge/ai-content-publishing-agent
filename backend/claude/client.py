@@ -12,11 +12,16 @@ import anthropic
 
 from app.config import get_settings
 
+CLIENT_TIMEOUT_SECONDS = 120.0
+"""No timeout is set by default: a hung call would block a worker job (and
+the whole single-threaded poll loop) indefinitely, never reaching the
+retry/backoff logic in worker/retry.py."""
+
 
 @lru_cache
 def _client() -> anthropic.Anthropic:
     settings = get_settings()
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    return anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=CLIENT_TIMEOUT_SECONDS)
 
 
 def chat(

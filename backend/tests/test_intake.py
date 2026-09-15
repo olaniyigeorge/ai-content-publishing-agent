@@ -6,7 +6,6 @@ from app.services.intake_service import create_content_request
 from shared.errors import ValidationFailure
 from shared.models import ContentRequestCreate, IntakeAttachmentIn
 
-
 USER_ID = "00000000-0000-0000-0000-000000000099"
 
 

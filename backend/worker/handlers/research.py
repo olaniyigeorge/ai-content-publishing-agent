@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import claude.service as claude_service
 from db.client import get_supabase
@@ -48,7 +48,7 @@ def handle_research(job: dict) -> None:
                     "raw_content": scraped["raw_content"],
                     "retrieval_method": SourceRetrievalMethod.URL_PROVIDED.value,
                     "status": SourceStatus.RETRIEVED.value,
-                    "retrieved_at": datetime.now(timezone.utc).isoformat(),
+                    "retrieved_at": datetime.now(UTC).isoformat(),
                 }
             )
             .execute()
@@ -94,7 +94,7 @@ def handle_research(job: dict) -> None:
     ).execute()
 
     db.table("content_requests").update(
-        {"status": RequestStatus.PLANNING.value, "updated_at": datetime.now(timezone.utc).isoformat()}
+        {"status": RequestStatus.PLANNING.value, "updated_at": datetime.now(UTC).isoformat()}
     ).eq("id", request_id).execute()
 
     db.table("jobs").insert(

@@ -7,6 +7,7 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test")
 os.environ.setdefault("SUPABASE_DB_URL", "postgresql+psycopg://test:test@localhost/test")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test")
 os.environ.setdefault("FIRECRAWL_API_KEY", "test")
+os.environ.setdefault("RESEND_API_KEY", "test")
 
 import pytest
 
@@ -23,6 +24,8 @@ def fake_db(monkeypatch):
         "app.services.intake_service",
         "app.services.review_service",
         "app.services.request_state_service",
+        "app.services.draft_service",
+        "app.services.adaptation_service",
         "app.api.publishing",
         "auth.service",
         "worker.handlers.research",

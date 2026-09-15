@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import claude.service as claude_service
 from app.config import get_settings
+from claude.quality_guards import check_article
 from db.client import get_supabase
 from shared.enums import (
     DraftStatus,
@@ -35,7 +36,15 @@ def handle_evaluate(job: dict) -> None:
         sources=sources,
     )
 
-    passed = result["overall_status"] == "pass"
+    # Deterministic check, independent of the model's self-assessment: a
+    # rubric "pass" can't override a hard length/structure violation
+    # (EDGE_CASES.md-style guard — see claude/quality_guards.py).
+    guard = check_article(draft["body_markdown"])
+    passed = result["overall_status"] == "pass" and not guard["violations"]
+    revision_notes = list(result["recommended_changes"])
+    if guard["violations"]:
+        revision_notes = [f"[hard guard] {v}" for v in guard["violations"]] + revision_notes
+
     evaluation_row = (
         db.table("evaluations")
         .insert(
@@ -45,9 +54,7 @@ def handle_evaluate(job: dict) -> None:
                 "overall_score": result["overall_score"],
                 "passed_threshold": passed,
                 "feedback": result["feedback"],
-                "revision_instructions": None
-                if passed
-                else "; ".join(result["recommended_changes"]) or result["feedback"],
+                "revision_instructions": None if passed else ("; ".join(revision_notes) or result["feedback"]),
                 "evaluated_by": EvaluatedBy.AI.value,
             }
         )
@@ -66,6 +73,7 @@ def handle_evaluate(job: dict) -> None:
                 "passed_threshold": passed,
                 "overall_status": result["overall_status"],
                 "unsupported_claims": result["unsupported_claims"],
+                "quality_guard": guard,
             },
         }
     ).execute()
@@ -75,7 +83,7 @@ def handle_evaluate(job: dict) -> None:
     if passed or at_cap or result["overall_status"] == "reject":
         db.table("article_drafts").update({"status": DraftStatus.EVALUATED.value}).eq("id", draft_id).execute()
         db.table("content_requests").update(
-            {"status": RequestStatus.IN_REVIEW.value, "updated_at": datetime.now(timezone.utc).isoformat()}
+            {"status": RequestStatus.IN_REVIEW.value, "updated_at": datetime.now(UTC).isoformat()}
         ).eq("id", request_id).execute()
         if at_cap and not passed:
             db.table("stage_events").insert(
@@ -94,7 +102,7 @@ def handle_evaluate(job: dict) -> None:
 
     # revise: enqueue another generate job against this draft
     db.table("content_requests").update(
-        {"status": RequestStatus.REVISING.value, "updated_at": datetime.now(timezone.utc).isoformat()}
+        {"status": RequestStatus.REVISING.value, "updated_at": datetime.now(UTC).isoformat()}
     ).eq("id", request_id).execute()
     db.table("jobs").insert(
         {

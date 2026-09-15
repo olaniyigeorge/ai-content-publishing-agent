@@ -12,7 +12,14 @@ import traceback
 
 from app.config import get_settings
 from db.client import get_supabase
-from shared.enums import JobReferenceType, JobStatus, JobType, PipelineStage, QueueStatus, StageEventStatus
+from shared.enums import (
+    JobReferenceType,
+    JobStatus,
+    JobType,
+    PipelineStage,
+    QueueStatus,
+    StageEventStatus,
+)
 from worker.claim import claim_job
 from worker.handlers.adapt import handle_adapt
 from worker.handlers.evaluate import handle_evaluate

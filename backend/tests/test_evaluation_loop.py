@@ -9,7 +9,14 @@ REQUEST_ID = "00000000-0000-0000-0000-000000000010"
 DRAFT_ID = "00000000-0000-0000-0000-000000000011"
 
 
-def _seed_draft(fake_db, version=1):
+_VALID_BODY = (
+    "# A Real Article Title\n\n"
+    + "This is a well-formed paragraph of the article body. " * 60
+    + "\n\nSee the [source](https://example.com/source) for more.\n"
+)
+
+
+def _seed_draft(fake_db, version=1, body_markdown=_VALID_BODY):
     fake_db.table("content_requests").insert(
         {"id": REQUEST_ID, "status": "evaluating", "target_audience": "SaaS marketers"}
     ).execute()
@@ -18,7 +25,7 @@ def _seed_draft(fake_db, version=1):
             "id": DRAFT_ID,
             "content_request_id": REQUEST_ID,
             "title": "Draft",
-            "body_markdown": "body",
+            "body_markdown": body_markdown,
             "version": version,
             "option_label": "A",
             "source_ids_used": [],
@@ -87,3 +94,28 @@ def test_passing_evaluation_marks_draft_evaluated_no_further_generate(fake_db, m
     assert not any(j["job_type"] == "generate" for j in jobs)
     draft = fake_db.table("article_drafts").select("*").eq("id", DRAFT_ID).execute().data[0]
     assert draft["status"] == "evaluated"
+
+
+def test_model_claimed_pass_is_overridden_by_hard_length_guard(fake_db, monkeypatch):
+    """claude/quality_guards.py: a rubric 'pass' can't rescue a draft that's
+    objectively too short / missing an H1 — the model's self-assessment
+    isn't trusted on its own."""
+    _seed_draft(fake_db, version=1, body_markdown="too short, no heading, no links")
+    pass_result = {
+        "overall_status": "pass",
+        "rubric_scores": {},
+        "overall_score": 4.8,
+        "unsupported_claims": [],
+        "sections_to_revise": [],
+        "recommended_changes": [],
+        "feedback": "great",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: pass_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
+
+    evaluations = fake_db.table("evaluations").select("*").execute().data
+    assert evaluations[0]["passed_threshold"] is False
+    assert "[hard guard]" in evaluations[0]["revision_instructions"]
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert any(j["job_type"] == "generate" for j in jobs)  # sent back for revision, not straight to review

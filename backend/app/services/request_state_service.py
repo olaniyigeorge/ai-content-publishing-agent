@@ -1,4 +1,7 @@
+from datetime import UTC, datetime
+
 from db.client import get_supabase
+from shared.enums import AdaptationStatus, RequestStatus
 from shared.errors import NotFound
 from shared.models import (
     ArticleDraftOut,
@@ -49,6 +52,28 @@ def get_content_request_detail(request_id: str) -> ContentRequestDetail:
         if adaptation_ids
         else []
     )
+    # Denormalize channel/content/title onto each queue row — same shape as
+    # publishing.py's _enrich(), reusing the adaptations/drafts already
+    # fetched for this request instead of re-querying by id.
+    adaptations_by_id = {a["id"]: a for a in adaptations}
+    drafts_by_id = {d["id"]: d for d in drafts}
+    enriched_queue_items = []
+    for row in queue_items:
+        adaptation = adaptations_by_id.get(row["channel_adaptation_id"])
+        draft = drafts_by_id.get(adaptation["article_draft_id"]) if adaptation else None
+        formatting_check = (adaptation or {}).get("formatting_check") or {}
+        violations = formatting_check.get("violations")
+        enriched_queue_items.append(
+            {
+                **row,
+                "content_request_id": adaptation["content_request_id"] if adaptation else None,
+                "channel": adaptation["channel"] if adaptation else None,
+                "content": adaptation["content"] if adaptation else None,
+                "content_format": adaptation["content_format"] if adaptation else None,
+                "article_title": draft["title"] if draft else None,
+                "failure_reason": "; ".join(violations) if violations else None,
+            }
+        )
     stage_events = (
         db.table("stage_events")
         .select("*")
@@ -66,6 +91,29 @@ def get_content_request_detail(request_id: str) -> ContentRequestDetail:
         evaluations=[EvaluationOut(**e) for e in evaluations],
         human_reviews=[HumanReviewOut(**h) for h in human_reviews],
         adaptations=[ChannelAdaptationOut(**a) for a in adaptations],
-        publishing_queue=[PublishingQueueOut(**q) for q in queue_items],
+        publishing_queue=[PublishingQueueOut(**q) for q in enriched_queue_items],
         stage_events=[StageEventOut(**e) for e in stage_events],
     )
+
+
+def maybe_finalize_request_status(request_id: str) -> None:
+    """Once every non-failed channel_adaptation for a request has been
+    published, the request itself never otherwise moves off `queued`
+    (adapt.py only sets it once, when adaptations are created) — call this
+    after a publish job succeeds to move the request to its terminal state.
+    """
+    db = get_supabase()
+    adaptations = db.table("channel_adaptations").select("status").eq("content_request_id", request_id).execute().data
+    if not adaptations:
+        return
+
+    statuses = {a["status"] for a in adaptations}
+    still_pending = statuses - {AdaptationStatus.PUBLISHED.value, AdaptationStatus.FAILED.value}
+    if still_pending:
+        return
+    if AdaptationStatus.PUBLISHED.value not in statuses:
+        return
+
+    db.table("content_requests").update(
+        {"status": RequestStatus.PUBLISHED.value, "updated_at": datetime.now(UTC).isoformat()}
+    ).eq("id", request_id).execute()

@@ -20,4 +20,3 @@ def publish(channel: str, content: str) -> None:
         raise PublishFailure(f"{channel} adapter (mock): simulated upstream failure")
     # Real integration point: call the LinkedIn/X API, or send the newsletter
     # via the email provider. For v1 this deterministically succeeds.
-    return None

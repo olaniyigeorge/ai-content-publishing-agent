@@ -2,7 +2,7 @@
 publishing_queue handlers so the retry policy lives in exactly one place.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 
 def backoff_seconds(attempts: int) -> int:
@@ -10,7 +10,7 @@ def backoff_seconds(attempts: int) -> int:
 
 
 def next_attempt_at(attempts: int) -> str:
-    return (datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds(attempts))).isoformat()
+    return (datetime.now(UTC) + timedelta(seconds=backoff_seconds(attempts))).isoformat()
 
 
 def on_failure(*, attempts: int, max_attempts: int, error: str) -> dict:
