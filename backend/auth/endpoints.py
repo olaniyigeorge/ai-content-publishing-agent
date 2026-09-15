@@ -27,12 +27,18 @@ def post_request_code(body: RequestCodeRequest) -> RequestCodeResponse:
 def post_verify_code(body: VerifyCodeRequest, response: Response) -> VerifyCodeResponse:
     settings = get_settings()
     session_id = verify_code(body.email, body.code)
+    # Frontend (Vercel) and backend (Render) are different sites in
+    # production, so the session cookie must be sent cross-site — that
+    # requires SameSite=None, which browsers only honor alongside Secure.
+    # Locally both run on localhost (same site, just different ports), where
+    # Lax works fine and Secure isn't available over plain http.
+    is_cross_site = settings.environment != "development"
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_id,
         httponly=True,
-        secure=settings.environment != "development",
-        samesite="lax",
+        secure=is_cross_site,
+        samesite="none" if is_cross_site else "lax",
         max_age=settings.session_ttl_minutes * 60,
     )
     return VerifyCodeResponse()
