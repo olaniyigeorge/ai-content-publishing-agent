@@ -1,7 +1,11 @@
 """claude/quality_guards.py — deterministic checks that don't trust the
 model's self-reported formatting_check / rubric pass."""
 
-from claude.quality_guards import check_article, check_channel_adaptation, truncate_to_limit
+from claude.quality_guards import (
+    check_article,
+    check_channel_adaptation,
+    truncate_to_limit,
+)
 from worker.handlers import adapt as adapt_handler
 
 REQUEST_ID = "00000000-0000-0000-0000-000000000050"

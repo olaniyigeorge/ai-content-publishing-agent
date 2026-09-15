@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 from app.services.intake_guards import (
@@ -17,6 +18,8 @@ from shared.enums import (
 )
 from shared.errors import ValidationFailure
 from shared.models import ContentRequestCreate, ContentRequestOut
+
+logger = logging.getLogger(__name__)
 
 
 def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str) -> ContentRequestOut:
@@ -114,7 +117,7 @@ def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str
                 "status": StageEventStatus.STARTED.value,
             }
         ).execute()
-    except Exception as exc:  # noqa: BLE001 — see comment above: must not orphan the row
+    except Exception as exc:  # see comment above: must not orphan the row
         try:
             db.table("content_requests").update(
                 {"status": RequestStatus.FAILED.value, "updated_at": datetime.now(UTC).isoformat()}
@@ -127,8 +130,8 @@ def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str
                     "error_message": f"failed to start the research job: {exc}",
                 }
             ).execute()
-        except Exception:  # noqa: BLE001 — best-effort; the outer raise still surfaces the 500
-            pass
+        except Exception:  # best-effort; the outer raise still surfaces the 500
+            logger.exception("failed to record content_request failure for %s", request_id)
         raise
 
     request_row["status"] = RequestStatus.RESEARCHING.value

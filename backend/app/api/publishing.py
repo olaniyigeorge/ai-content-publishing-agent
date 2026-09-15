@@ -1,13 +1,16 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from auth.deps import get_current_user
 from db.client import get_supabase
 from shared.enums import QueueStatus
 from shared.errors import InvalidStateTransition, NotFound
-from shared.models import PublishingQueueOut, PublishingQueueScheduleIn, PublishingQueueStatusIn
+from shared.models import (
+    PublishingQueueOut,
+    PublishingQueueScheduleIn,
+    PublishingQueueStatusIn,
+)
 
 router = APIRouter(prefix="/api/publishing-queue", tags=["publishing"])
 
