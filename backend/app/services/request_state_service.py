@@ -14,6 +14,7 @@ from shared.models import (
     IntakeAttachmentOut,
     PublishingQueueOut,
     SourceOut,
+    SourceOverrideIn,
     StageEventOut,
     UsageModelBreakdown,
     UsageSummaryOut,
@@ -106,6 +107,25 @@ def get_content_request_detail(request_id: str) -> ContentRequestDetail:
         stage_events=[StageEventOut(**e) for e in stage_events],
         usage=[ClaudeUsageOut(**u) for u in usage_rows],
     )
+
+
+def override_source_status(request_id: str, source_id: str, body: SourceOverrideIn) -> SourceOut:
+    """A human reviewer's manual selected/discarded call on a source,
+    overriding whatever claude_service.select_sources originally decided
+    during the research step. Kept separate from that automated pass rather
+    than re-running it, since the reviewer's judgment is meant to be final."""
+    db = get_supabase()
+    rows = db.table("sources").select("*").eq("id", source_id).eq("content_request_id", request_id).execute().data
+    if not rows:
+        raise NotFound(f"source {source_id} not found on content request {request_id}")
+
+    update = {"status": body.status.value}
+    if body.status == "discarded":
+        update["discard_reason"] = body.reason or "discarded by reviewer"
+    else:
+        update["discard_reason"] = None
+    updated = db.table("sources").update(update).eq("id", source_id).execute().data[0]
+    return SourceOut(**updated)
 
 
 def get_usage_summary() -> UsageSummaryOut:
