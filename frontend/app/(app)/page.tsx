@@ -27,11 +27,14 @@ export default function RequestsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Content requests</h1>
-          <p className="mt-1 text-sm text-muted">
-            Track every request from idea to published.
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+            <span>Track every request from idea to published.</span>
             {usage && usage.call_count > 0 && (
-              <span className="ml-2 text-muted/80">
-                · {usage.call_count} Claude call{usage.call_count === 1 ? "" : "s"} so far, ${usage.total_cost_usd.toFixed(4)} total
+              <span className="inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-card px-2.5 py-0.5 text-xs font-medium text-muted">
+                {usage.call_count} call{usage.call_count === 1 ? "" : "s"}
+                <span className="text-muted/50">·</span>
+                <span className="text-foreground">${usage.total_cost_usd.toFixed(4)}</span>
+                total
               </span>
             )}
           </p>
@@ -44,9 +47,9 @@ export default function RequestsPage() {
         </Link>
       </div>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
-      {!requests && !error && <LoadingLine label="Loading requests…" />}
+      {!requests && !error && <LoadingLine label="Loading requests…" centered />}
 
       {requests && requests.length === 0 && (
         <div className="glow-card mt-6 rounded-xl border border-dashed border-surface-border bg-surface-card p-10 text-center">
@@ -62,6 +65,7 @@ export default function RequestsPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-surface-border bg-surface-base text-left text-muted">
               <tr>
+                <th className="px-4 py-2.5 font-medium">ID</th>
                 <th className="px-4 py-2.5 font-medium">Idea</th>
                 <th className="px-4 py-2.5 font-medium">Audience</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
@@ -69,24 +73,56 @@ export default function RequestsPage() {
               </tr>
             </thead>
             <tbody>
-              {requests.map((r, i) => (
-                <tr
-                  key={r.id}
-                  className="animate-fade-in-up border-b border-surface-border/70 transition-colors duration-150 last:border-0 hover:bg-surface-card-hover"
-                  style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
-                >
-                  <td className="px-4 py-3">
-                    <Link href={`/requests/${r.id}`} className="font-medium text-foreground hover:text-primary hover:underline">
-                      {r.raw_idea?.trim() || "(source URL only)"}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-muted">{r.target_audience}</td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={r.status} />
-                  </td>
-                  <td className="px-4 py-3 text-muted">{new Date(r.updated_at).toLocaleString()}</td>
-                </tr>
-              ))}
+              {requests.map((r, i) => {
+                const idea = r.raw_idea?.trim();
+                const displayIdea = idea
+                  ? idea.charAt(0).toUpperCase() + idea.slice(1)
+                  : "(source URL only)";
+
+                return (
+                  <tr
+                    key={r.id}
+                    className="animate-fade-in-up border-b border-surface-border/70 transition-colors duration-150 last:border-0 hover:bg-surface-card-hover"
+                    style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
+                  >
+                    <td className="px-4 py-3">
+                      <span
+                        className="font-mono text-xs text-muted/70"
+                        title={r.id}
+                      >
+                        {r.id.slice(0, 8)}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/requests/${r.id}`}
+                        className="font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {displayIdea}
+                      </Link>
+                    </td>
+
+                    <td className="px-4 py-3 text-muted">
+                      {r.target_audience}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <StatusBadge status={r.status} />
+                    </td>
+
+                    <td className="px-4 py-3 text-muted">
+                      {new Date(r.updated_at).toLocaleString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

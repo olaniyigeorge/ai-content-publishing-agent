@@ -13,7 +13,9 @@ from shared.enums import (
     StageEventStatus,
 )
 from shared.errors import ResearchFailure
-from worker.firecrawl import ScrapeFailure, scrape_url
+from worker.firecrawl import ScrapeFailure, SearchFailure, scrape_url, search_web
+
+SEARCH_RESULT_LIMIT = 3
 
 
 def handle_research(job: dict) -> None:
@@ -71,6 +73,38 @@ def handle_research(job: dict) -> None:
             .data[0]
         )
 
+    searched = False
+    if not source_rows:
+        # No usable explicit sources — fall back to an autonomous web search
+        # instead of proceeding ungrounded (EDGE_CASES.md #6 previously
+        # treated this as acceptable; a raw_idea alone should still get a
+        # chance at real grounding before we give up on sourcing).
+        searched = True
+        query = f"{request_row['raw_idea']} {request_row['target_audience']}".strip()
+        try:
+            results = search_web(query, limit=SEARCH_RESULT_LIMIT)
+        except SearchFailure as exc:
+            failures.append({"url": None, "error": str(exc)})
+            results = []
+        for result in results:
+            source_rows.append(
+                db.table("sources")
+                .insert(
+                    {
+                        "content_request_id": request_id,
+                        "intake_attachment_id": None,
+                        "url": result["url"],
+                        "title": result["title"],
+                        "raw_content": result["raw_content"],
+                        "retrieval_method": SourceRetrievalMethod.WEB_SEARCH.value,
+                        "status": SourceStatus.RETRIEVED.value,
+                        "retrieved_at": datetime.now(UTC).isoformat(),
+                    }
+                )
+                .execute()
+                .data[0]
+            )
+
     if source_rows:
         selection = claude_service.select_sources(
             raw_idea=request_row["raw_idea"],
@@ -110,6 +144,7 @@ def handle_research(job: dict) -> None:
                 "attachments_attempted": len(attachments),
                 "sources_retrieved": len(source_rows),
                 "sources_usable": usable_count,
+                "web_search_used": searched,
                 "failures": failures,
             },
         }

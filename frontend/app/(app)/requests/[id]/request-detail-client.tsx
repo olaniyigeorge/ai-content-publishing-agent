@@ -12,6 +12,7 @@ import {
   Paperclip,
   PencilLine,
   Sparkles,
+  ChevronLeft,
 } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
 import { api, ApiError } from "@/lib/api";
@@ -47,6 +48,14 @@ const MAX_RUBRIC_SCORE = 5;
 const TERMINAL_STATUSES = new Set(["published", "rejected", "failed"]);
 const REVIEWABLE_DRAFT_STATUSES = new Set(["evaluated", "revised"]);
 
+function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return "Your session has expired — please log in again.";
+    return err.message;
+  }
+  return fallback;
+}
+
 export function RequestDetailClient({ id }: { id: string }) {
   const [detail, setDetail] = useState<ContentRequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +76,7 @@ export function RequestDetailClient({ id }: { id: string }) {
   const [editBody, setEditBody] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [sourceOverridePending, setSourceOverridePending] = useState<string | null>(null);
 
   function toggleDraftCollapsed(draftId: string) {
     setCollapsedDraftIds((prev) => {
@@ -88,7 +98,7 @@ export function RequestDetailClient({ id }: { id: string }) {
         // load request" banner sitting on top of a page that's now fine.
         setError(null);
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "failed to load request"));
+      .catch((err) => setError(friendlyError(err, "failed to load request")));
   }, [id]);
 
   useEffect(() => {
@@ -111,7 +121,7 @@ export function RequestDetailClient({ id }: { id: string }) {
       setReviewNotes("");
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to submit review");
+      setError(friendlyError(err, "failed to submit review"));
     }
   }
 
@@ -125,7 +135,7 @@ export function RequestDetailClient({ id }: { id: string }) {
       setAwaitingRewrite({ kind: "draft", id: draftId, startedAt: Date.now() });
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to queue rewrite");
+      setError(friendlyError(err, "failed to queue rewrite"));
     } finally {
       setRewritePending(null);
     }
@@ -141,7 +151,7 @@ export function RequestDetailClient({ id }: { id: string }) {
       setAwaitingRewrite({ kind: "adaptation", beforeId: adaptationId, startedAt: Date.now() });
       load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to queue rewrite");
+      setError(friendlyError(err, "failed to queue rewrite"));
     } finally {
       setRewritePending(null);
     }
@@ -167,24 +177,43 @@ export function RequestDetailClient({ id }: { id: string }) {
       setEditingDraftId(null);
       load();
     } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "failed to save edit");
+      setEditError(friendlyError(err, "failed to save edit"));
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function handleSourceOverride(sourceId: string, status: "selected" | "discarded") {
+    setSourceOverridePending(sourceId);
+    setError(null);
+    try {
+      await api.overrideSourceStatus(id, sourceId, status);
+      load();
+    } catch (err) {
+      setError(friendlyError(err, "failed to update source"));
+    } finally {
+      setSourceOverridePending(null);
     }
   }
 
   if (error && !detail) {
     return (
       <div>
-        <Link href="/" className="text-sm text-muted hover:text-foreground">
-          ← back to requests
+        <Link href="/" className="flex items-center gap-1 text-sm text-muted hover:text-foreground">
+          <ChevronLeft className="mt-[3px] h-3.5 w-3.5" />
+          <>back to requests</>
         </Link>
-        <p className="mt-4 text-sm text-red-600">{error}</p>
+        <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-red-200 bg-red-50 py-12 text-center">
+          <p className="text-sm font-medium text-red-600">{error}</p>
+          <p className="text-xs text-red-600/70">
+            failed to load this request — it may not exist, or your session may need refreshing
+          </p>
+        </div>
       </div>
     );
   }
 
-  if (!detail) return <LoadingLine label="Loading request…" />;
+  if (!detail) return <LoadingLine label="Loading request…" centered />;
 
   const { request, sources, drafts, evaluations, human_reviews, adaptations, publishing_queue, stage_events, usage } =
     detail;
@@ -204,17 +233,25 @@ export function RequestDetailClient({ id }: { id: string }) {
   return (
     <div className="animate-fade-in-up space-y-6">
       <div>
-        <Link href="/" className="text-sm text-muted hover:text-foreground">
-          ← back to requests
+       <Link href="/" className="flex items-center gap-1 text-sm text-muted hover:text-foreground">
+          <ChevronLeft className="mt-[3px] h-3.5 w-3.5" />
+          <>back to requests</>
         </Link>
         <div className="mt-2 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-foreground">{request.raw_idea?.trim() || "(source URL only)"}</h1>
-            <p className="mt-1 text-sm text-muted">Audience: {request.target_audience}</p>
+            <p className="mt-1 text-sm text-muted">
+              Audience: {request.target_audience}
+              <span className="ml-2 font-mono text-xs text-muted/50" title={request.id}>
+                #{request.id.slice(0, 8)}
+              </span>
+            </p>
           </div>
           <StatusBadge status={request.status} />
         </div>
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+        )}
 
         {(request.supporting_material || detail.attachments.length > 0) && (
           <div className="mt-3">
@@ -444,24 +481,59 @@ export function RequestDetailClient({ id }: { id: string }) {
               <EmptyNote text="no sources retrieved yet" />
             ) : (
               <ul className="space-y-3">
-                {sources.map((s) => (
-                  <li key={s.id} className="rounded-lg border border-surface-border bg-surface-card p-3 text-sm">
-                    <div className="flex items-center justify-between gap-2">
-                      <a href={s.url} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:text-primary hover:underline">
-                        {s.title || s.url}
-                      </a>
-                      <StatusBadge status={s.status} />
-                    </div>
-                    {s.excerpt_selected && <p className="mt-1 text-muted">&ldquo;{s.excerpt_selected}&rdquo;</p>}
-                    {s.relevance_notes && <p className="mt-1 text-muted/70">{s.relevance_notes}</p>}
-                    {(s.status === "discarded" || s.status === "failed") && s.discard_reason && (
-                      <p className="mt-1 text-amber-700">
-                        {s.status === "failed" ? "Couldn't retrieve this source: " : "Not used: "}
-                        {s.discard_reason}
-                      </p>
-                    )}
-                  </li>
-                ))}
+                {sources.map((s) => {
+                  const pending = sourceOverridePending === s.id;
+                  const canOverride = s.status !== "failed";
+                  return (
+                    <li key={s.id} className="rounded-lg border border-surface-border bg-surface-card p-3 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <a href={s.url} target="_blank" rel="noreferrer" className="font-medium text-foreground hover:text-primary hover:underline">
+                          {s.title || s.url}
+                        </a>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {s.retrieval_method === "web_search" && (
+                            <span className="rounded-full border border-surface-border bg-surface-base px-2 py-0.5 text-[11px] text-muted" title="Found by an autonomous web search — no source URL was supplied">
+                              found by agent
+                            </span>
+                          )}
+                          <StatusBadge status={s.status} />
+                        </div>
+                      </div>
+                      {s.excerpt_selected && <p className="mt-1 text-muted">&ldquo;{s.excerpt_selected}&rdquo;</p>}
+                      {s.relevance_notes && <p className="mt-1 text-muted/70">{s.relevance_notes}</p>}
+                      {(s.status === "discarded" || s.status === "failed") && s.discard_reason && (
+                        <p className="mt-1 text-amber-700">
+                          {s.status === "failed" ? "Couldn't retrieve this source: " : "Not used: "}
+                          {s.discard_reason}
+                        </p>
+                      )}
+                      {canOverride && (
+                        <div className="mt-2 flex items-center gap-2">
+                          {s.status !== "selected" && (
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() => handleSourceOverride(s.id, "selected")}
+                              className="rounded-md border border-surface-border px-2 py-1 text-xs text-foreground hover:bg-surface-card-hover disabled:opacity-60"
+                            >
+                              mark selected
+                            </button>
+                          )}
+                          {s.status !== "discarded" && (
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() => handleSourceOverride(s.id, "discarded")}
+                              className="rounded-md border border-surface-border px-2 py-1 text-xs text-muted hover:bg-surface-card-hover disabled:opacity-60"
+                            >
+                              discard
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Section>
