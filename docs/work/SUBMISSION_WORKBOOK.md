@@ -556,6 +556,18 @@ Not yet built, so none handled at runtime. The design accounts for these at the 
 - OTP invalidated after use (consumed_at field)
 - Session is opaque + server-side + immediate revocation on logout (delete row, no revoked_at needed)
 
+## Known limitations (for the one-pager appendix + video script)
+
+**Intake's gibberish filter is a deterministic heuristic, not a semantic check — it can be beaten by a single character.** Found during testing (`TESTING_FINDINGS.md`, Session 3, test #8): the string `"xkcd zzzz qwrty tbh"` was correctly rejected at intake ("doesn't look like real words — no vowels"), but appending a single vowel (`"xkcd zzzz qwrty tbha"`) passed the same filter — the check only looks for *the presence of a vowel*, not whether the text is actually meaningful. That's a deliberate tradeoff, not an oversight: catching this reliably would require a Claude call on every single intake submission, which defeats the point of having a free, instant, deterministic filter at all. A semantic check that costs money on every request (including the vast majority of genuinely fine ones) isn't worth it just to catch a rare adversarial edge case.
+
+The system still didn't produce bad output from it. When the nonsense idea reached the generation step, Claude refused to write the article rather than inventing a fake xkcd comic and writing confidently about it — the draft was an honest explanation of why it couldn't proceed, the evaluator scored it 1.40/5, and the loop stopped after one attempt instead of spending the full revision cap. Total cost: 3 Claude calls, $0.0286.
+
+**For the one-pager's Appendix (Assumptions/Limitations):**
+> Intake validation catches obviously-empty, too-short, or clearly-nonsense input for free, before any AI cost is spent — but it's a deterministic heuristic, not a semantic judgment, so it can be beaten by adversarial input (e.g. a single added character). This is a known, accepted tradeoff: the generation step is the real backstop — it's instructed to refuse rather than fabricate when it has nothing real to work with, so bad input costs a small amount (a few cents) rather than producing confident-looking fabricated content.
+
+**For the video script** (pairs well with the failure/edge-case demo beat):
+> "Our intake filter catches most junk for free, before we spend anything on it — but it's not perfect. Watch what happens if I sneak something past it..." *[submit the near-miss gibberish case]* "...it got through intake, but the writer itself refused to make something up — it told us honestly it didn't have anything real to write about, instead of inventing a fake article. That's the layer we actually rely on to stop bad content from reaching a human looking finished."
+
 ## One thing to do differently next time (for reflections)
 
 To be filled in after building. Likely candidate: the architecture doc §9.7 lists what's deferred (RLS, real publishing, pgvector, configurable backoff) — once we've built v1 and seen where the actual friction was, this field gets the honest answer.
