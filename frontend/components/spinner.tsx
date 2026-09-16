@@ -19,7 +19,21 @@ export function Spinner({
   );
 }
 
-export function LoadingLine({ label = "Loading…" }: { label?: string }) {
+export function LoadingLine({
+  label = "Loading…",
+  centered = false,
+}: {
+  label?: string;
+  centered?: boolean;
+}) {
+  if (centered) {
+    return (
+      <div className="flex animate-fade-in items-center justify-center gap-2 py-16 text-sm text-muted">
+        <Spinner />
+        {label}
+      </div>
+    );
+  }
   return (
     <p className="mt-6 flex animate-fade-in items-center gap-2 text-sm text-muted">
       <Spinner />
