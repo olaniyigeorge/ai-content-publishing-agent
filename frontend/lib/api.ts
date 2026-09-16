@@ -8,6 +8,8 @@ import type {
   PublishingQueueOut,
   RewriteAccepted,
   ReviewDecision,
+  SourceOut,
+  SourceStatus,
   UsageSummaryOut,
 } from "@/lib/types";
 
@@ -119,6 +121,17 @@ export const api = {
     }),
 
   getUsageSummary: () => request<UsageSummaryOut>("/api/usage/summary"),
+
+  overrideSourceStatus: (
+    requestId: string,
+    sourceId: string,
+    status: Extract<SourceStatus, "selected" | "discarded">,
+    reason?: string
+  ) =>
+    request<SourceOut>(`/api/requests/${requestId}/sources/${sourceId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, reason: reason ?? null }),
+    }),
 
   uploadAsset: async (file: File): Promise<UploadResult> => {
     const formData = new FormData();
