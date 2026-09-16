@@ -23,11 +23,20 @@ app.add_middleware(
 
 @app.exception_handler(DomainError)
 def handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-    """Every domain error carries a message meant to be read directly — this
-    is what makes API failures debuggable instead of a generic 500
-    (EDGE_CASES.md #52)."""
+    """
+    Every domain error carries a message meant to be read directly — this
+    is what makes API failures debuggable instead of a generic 500.
+    """
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
+@app.exception_handler(Exception)
+def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catches anything not already a DomainError — e.g. a transient Supabase
+    connection drop (SSL: UNEXPECTED_EOF_WHILE_READING) — so callers get a
+    clean, retryable 503 instead of a bare 500 with no body.
+    """
+    return JSONResponse(status_code=503, content={"detail": "Temporarily unavailable — please try again."})
 
 app.include_router(auth_endpoints.router)
 app.include_router(intake.router)
