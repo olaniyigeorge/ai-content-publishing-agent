@@ -5,6 +5,7 @@ tests talk to.
 """
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -76,6 +77,13 @@ class SourceOut(BaseModel):
     retrieved_at: datetime | None
     created_at: datetime
 
+
+class SourceOverrideIn(BaseModel):
+    """A human reviewer's manual selected/discarded call, overriding
+    whatever claude_service.select_sources originally decided."""
+
+    status: Literal[SourceStatus.SELECTED, SourceStatus.DISCARDED]
+    reason: str | None = None
 
 # ---- Drafts / evaluations ---------------------------------------------------
 
