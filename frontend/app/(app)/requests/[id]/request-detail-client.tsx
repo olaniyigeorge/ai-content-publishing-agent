@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
 import { api, ApiError } from "@/lib/api";
+import { HtmlContentPreview } from "@/components/html-content-preview";
 import { StatusBadge } from "@/components/status-badge";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
 import { LoadingLine } from "@/components/spinner";
@@ -22,6 +23,21 @@ import { QUEUE_STATUS_HELP } from "@/lib/queue-status";
 import type { ChannelAdaptationOut, ContentRequestDetail, ReviewDecision } from "@/lib/types";
 
 const REWRITE_TIMEOUT_MS = 90_000;
+
+// Mirrors pipeline-timeline.tsx's STAGE_ORB_STATE, keyed by request status
+// instead of stage — used for the "nothing has landed yet" empty state.
+const STARTED_ORB_STATE: Record<string, "listening" | "searching" | "shaping" | "working"> = {
+  intake: "listening",
+  researching: "searching",
+  planning: "shaping",
+  drafting: "working",
+};
+const STARTED_STATUS_LABEL: Record<string, string> = {
+  intake: "Getting started…",
+  researching: "Researching your sources…",
+  planning: "Planning the article…",
+  drafting: "Writing the first draft…",
+};
 type AwaitingRewrite =
   | { kind: "draft"; id: string; startedAt: number }
   | { kind: "adaptation"; beforeId: string; startedAt: number };
@@ -64,7 +80,14 @@ export function RequestDetailClient({ id }: { id: string }) {
   const load = useCallback(() => {
     api
       .getRequestDetail(id)
-      .then(setDetail)
+      .then((d) => {
+        setDetail(d);
+        // A load-failure error must not outlive the failure — the next
+        // successful poll (every 5s while the pipeline is active) has to
+        // clear it, or a single transient blip leaves a permanent "failed to
+        // load request" banner sitting on top of a page that's now fine.
+        setError(null);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : "failed to load request"));
   }, [id]);
 
@@ -165,6 +188,12 @@ export function RequestDetailClient({ id }: { id: string }) {
 
   const { request, sources, drafts, evaluations, human_reviews, adaptations, publishing_queue, stage_events, usage } =
     detail;
+  const pipelineJustStarted =
+    drafts.length === 0 &&
+    sources.length === 0 &&
+    adaptations.length === 0 &&
+    publishing_queue.length === 0 &&
+    !TERMINAL_STATUSES.has(request.status);
 
   const evaluationsByDraft = new Map(evaluations.map((e) => [e.article_draft_id, e]));
   const reviewsByDraft = new Map<string, typeof human_reviews>();
@@ -232,6 +261,17 @@ export function RequestDetailClient({ id }: { id: string }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {pipelineJustStarted ? (
+          <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-surface-border bg-surface-card py-24 text-center">
+            <ThinkingOrb state={STARTED_ORB_STATE[request.status] ?? "working"} size={64} aria-label="Working" />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                {STARTED_STATUS_LABEL[request.status] ?? "Working on it…"}
+              </p>
+              <p className="mt-1 text-xs text-muted">This updates automatically — no need to refresh.</p>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           <Section title={`Article options (${drafts.length})`}>
             {drafts.length === 0 ? (
@@ -414,6 +454,12 @@ export function RequestDetailClient({ id }: { id: string }) {
                     </div>
                     {s.excerpt_selected && <p className="mt-1 text-muted">&ldquo;{s.excerpt_selected}&rdquo;</p>}
                     {s.relevance_notes && <p className="mt-1 text-muted/70">{s.relevance_notes}</p>}
+                    {(s.status === "discarded" || s.status === "failed") && s.discard_reason && (
+                      <p className="mt-1 text-amber-700">
+                        {s.status === "failed" ? "Couldn't retrieve this source: " : "Not used: "}
+                        {s.discard_reason}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -442,9 +488,13 @@ export function RequestDetailClient({ id }: { id: string }) {
                     {latest.formatting_check?.auto_trimmed ? (
                       <p className="mt-1 text-xs text-amber-600">auto-trimmed to fit channel limit</p>
                     ) : null}
-                    <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-sm text-muted">
-                      {latest.content}
-                    </pre>
+                    {latest.content_format === "html" ? (
+                      <HtmlContentPreview html={latest.content} />
+                    ) : (
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-sm text-muted">
+                        {latest.content}
+                      </pre>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <CopyButton text={latest.content} />
                       <IconButton
@@ -553,6 +603,7 @@ export function RequestDetailClient({ id }: { id: string }) {
             </p>
           </Section>
         </div>
+        )}
 
         <aside className="lg:sticky lg:top-6 lg:self-start space-y-6">
           <Section title="Pipeline activity">

@@ -5,12 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Copy, Info, Mail, Share2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { HtmlContentPreview } from "@/components/html-content-preview";
 import { StatusBadge } from "@/components/status-badge";
 import { LoadingLine } from "@/components/spinner";
 import { QUEUE_STATUS_HELP, htmlToPlainText } from "@/lib/queue-status";
 import type { PublishingQueueOut, QueueStatus } from "@/lib/types";
 
-const MANUAL_STATUSES: QueueStatus[] = ["queued", "published", "failed", "cancelled"];
+const MANUAL_STATUSES: QueueStatus[] = ["queued", "ready_to_publish", "published", "failed", "cancelled"];
 
 const CHANNEL_LABELS: Record<string, string> = {
   linkedin: "LinkedIn",
@@ -192,9 +193,13 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
       </div>
 
       {expanded && q.content && (
-        <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-surface-border bg-surface-card-hover p-3 text-sm text-foreground">
-          {q.content}
-        </pre>
+        q.content_format === "html" ? (
+          <HtmlContentPreview html={q.content} />
+        ) : (
+          <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-surface-border bg-surface-card-hover p-3 text-sm text-foreground">
+            {q.content}
+          </pre>
+        )
       )}
 
       {(q.last_error || q.failure_reason) && (
@@ -240,6 +245,14 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
             className="rounded-md border border-surface-border px-3 py-1.5 text-sm text-foreground transition-colors duration-150 hover:bg-surface-card-hover"
           >
             Retry
+          </button>
+        )}
+        {q.status === "ready_to_publish" && (
+          <button
+            onClick={() => run(() => api.setQueueItemStatus(q.id, "published"))}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110"
+          >
+            I posted this — mark Published
           </button>
         )}
 

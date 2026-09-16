@@ -1,7 +1,9 @@
 export const QUEUE_STATUS_HELP: Record<string, string> = {
   queued: "waiting for its scheduled time (or to be sent immediately if none is set)",
   processing: "currently being posted",
-  published: "successfully posted to the channel",
+  ready_to_publish:
+    "the system has prepared this for sending, but doesn't post to the real platform yet — copy the content, post it yourself, then mark it Published below",
+  published: "confirmed posted to the channel by a human — the system never posts to a real platform on its own",
   failed: "posting failed and won't be retried automatically",
   dead_letter: "retried the maximum number of times and gave up — use Retry to try again",
   cancelled: "manually cancelled before it was posted",

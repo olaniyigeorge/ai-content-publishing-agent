@@ -33,7 +33,7 @@ export default function NewRequestPage() {
 
   const [rawIdea, setRawIdea] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceUrls, setSourceUrls] = useState<string[]>([""]);
   const [notes, setNotes] = useState("");
   const [assets, setAssets] = useState<PendingAsset[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
@@ -44,21 +44,40 @@ export default function NewRequestPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const ideaError = validateRawIdea(rawIdea);
-  const sourceUrlError = validateSourceUrl(sourceUrl);
+  const sourceUrlErrors = sourceUrls.map(validateSourceUrl);
   const audienceError = validateTargetAudience(targetAudience);
+  const filledSourceUrls = sourceUrls.map((u) => u.trim()).filter(Boolean);
   const noContentError =
-    !rawIdea.trim() && !sourceUrl.trim() && assets.length === 0
+    !rawIdea.trim() && filledSourceUrls.length === 0 && assets.length === 0
       ? "give a raw idea, a source URL, or an attachment"
       : null;
+  const tooManyAttachmentsError =
+    filledSourceUrls.length + assets.length > MAX_ATTACHMENTS
+      ? `too many attachments — max ${MAX_ATTACHMENTS} total (source URLs + files)`
+      : null;
 
-  const formIsValid = !ideaError && !sourceUrlError && !audienceError && !noContentError;
+  const formIsValid =
+    !ideaError && !sourceUrlErrors.some(Boolean) && !audienceError && !noContentError && !tooManyAttachmentsError;
+
+  function updateSourceUrl(index: number, value: string) {
+    setSourceUrls((prev) => prev.map((u, i) => (i === index ? value : u)));
+  }
+
+  function addSourceUrlField() {
+    setSourceUrls((prev) => [...prev, ""]);
+  }
+
+  function removeSourceUrlField(index: number) {
+    setSourceUrls((prev) => (prev.length === 1 ? [""] : prev.filter((_, i) => i !== index)));
+    setTouched((t) => ({ ...t, [`sourceUrl-${index}`]: false }));
+  }
 
   async function handleFileSelect(files: FileList | null) {
     if (!files || files.length === 0) return;
     setUploadError(null);
 
-    if (assets.length + files.length > MAX_ATTACHMENTS) {
-      setUploadError(`too many attachments — max ${MAX_ATTACHMENTS}`);
+    if (filledSourceUrls.length + assets.length + files.length > MAX_ATTACHMENTS) {
+      setUploadError(`too many attachments — max ${MAX_ATTACHMENTS} total (source URLs + files)`);
       return;
     }
 
@@ -98,7 +117,12 @@ export default function NewRequestPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched({ idea: true, audience: true, sourceUrl: true });
+    setTouched((t) => ({
+      ...t,
+      idea: true,
+      audience: true,
+      ...Object.fromEntries(sourceUrls.map((_, i) => [`sourceUrl-${i}`, true])),
+    }));
     setError(null);
     if (!formIsValid) return;
 
@@ -109,7 +133,7 @@ export default function NewRequestPage() {
         target_audience: targetAudience.trim(),
         supporting_material: notes.trim() ? { notes: notes.trim() } : null,
         attachments: [
-          ...(sourceUrl.trim() ? [{ type: "url" as const, url: sourceUrl.trim() }] : []),
+          ...filledSourceUrls.map((url) => ({ type: "url" as const, url })),
           ...assets.map((a) => ({
             type: (a.content_type.startsWith("image/") ? "image" : "file") as "image" | "file",
             storage_path: a.storage_path,
@@ -152,16 +176,46 @@ export default function NewRequestPage() {
             />
           </Field>
 
-          <Field label="Source URL" optional error={touched.sourceUrl ? sourceUrlError : null}>
-            <input
-              id="source_url"
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, sourceUrl: true }))}
-              className={inputClass(touched.sourceUrl && !!sourceUrlError)}
-              placeholder="https://..."
-            />
+          <Field label="Source URLs" optional hint={`${filledSourceUrls.length}/${MAX_ATTACHMENTS}`}>
+            <div className="space-y-2">
+              {sourceUrls.map((url, i) => {
+                const fieldError = touched[`sourceUrl-${i}`] ? sourceUrlErrors[i] : null;
+                return (
+                  <div key={i}>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(e) => updateSourceUrl(i, e.target.value)}
+                        onBlur={() => setTouched((t) => ({ ...t, [`sourceUrl-${i}`]: true }))}
+                        className={inputClass(!!fieldError)}
+                        placeholder="https://..."
+                      />
+                      {(sourceUrls.length > 1 || url) && (
+                        <button
+                          type="button"
+                          onClick={() => removeSourceUrlField(i)}
+                          className="shrink-0 rounded-md border border-surface-border px-2.5 text-sm text-muted transition-colors duration-150 hover:bg-surface-card-hover hover:text-foreground"
+                          aria-label={`Remove source URL ${i + 1}`}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {fieldError && <p className="mt-1 animate-fade-in text-xs text-red-600">{fieldError}</p>}
+                  </div>
+                );
+              })}
+              {tooManyAttachmentsError && <p className="text-xs text-red-600">{tooManyAttachmentsError}</p>}
+              <button
+                type="button"
+                onClick={addSourceUrlField}
+                disabled={filledSourceUrls.length + assets.length >= MAX_ATTACHMENTS}
+                className="text-xs font-medium text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+              >
+                + Add another source URL
+              </button>
+            </div>
           </Field>
 
           <Field
@@ -180,12 +234,12 @@ export default function NewRequestPage() {
             />
           </Field>
 
-          <Field label="Attachments" optional hint={`${assets.length}/${MAX_ATTACHMENTS}`}>
+          <Field label="Attachments" optional hint={`${filledSourceUrls.length + assets.length}/${MAX_ATTACHMENTS}`}>
             <div className="space-y-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading || assets.length >= MAX_ATTACHMENTS}
+                disabled={uploading || filledSourceUrls.length + assets.length >= MAX_ATTACHMENTS}
                 className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-surface-border bg-surface-base px-3 py-4 text-sm text-muted transition-colors duration-150 hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-50"
               >
                 {uploading ? (
@@ -289,7 +343,7 @@ export default function NewRequestPage() {
 
           <button
             type="submit"
-            disabled={submitting || uploading}
+            disabled={submitting || uploading || !formIsValid}
             className="glow-primary rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:pointer-events-none disabled:opacity-50"
           >
             {submitting ? "Submitting..." : "Submit request"}

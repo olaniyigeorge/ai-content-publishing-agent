@@ -25,7 +25,14 @@ export type ReviewDecision = "approved" | "rejected" | "revise_requested" | "opt
 export type Channel = "linkedin" | "x" | "newsletter";
 export type ContentFormat = "plain_text" | "html";
 export type AdaptationStatus = "draft" | "approved" | "queued" | "published" | "failed";
-export type QueueStatus = "queued" | "processing" | "published" | "failed" | "dead_letter" | "cancelled";
+export type QueueStatus =
+  | "queued"
+  | "processing"
+  | "ready_to_publish"
+  | "published"
+  | "failed"
+  | "dead_letter"
+  | "cancelled";
 export type StageEventStatus = "started" | "succeeded" | "failed";
 export type JobType = "research" | "plan" | "generate" | "evaluate" | "adapt" | "publish";
 
@@ -74,6 +81,7 @@ export interface SourceOut {
   title: string | null;
   excerpt_selected: string | null;
   relevance_notes: string | null;
+  discard_reason: string | null;
   retrieval_method: SourceRetrievalMethod;
   status: SourceStatus;
   retrieved_at: string | null;
