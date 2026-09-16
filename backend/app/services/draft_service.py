@@ -6,6 +6,7 @@ the human `revise_requested` path in review_service.py).
 
 from datetime import UTC, datetime
 
+from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
     DraftStatus,
@@ -27,6 +28,16 @@ def rewrite_draft(draft_id: str, instructions: str | None) -> dict:
     if not rows:
         raise NotFound(f"article draft {draft_id} not found")
     draft = rows[0]
+
+    # TESTING_FINDINGS.md, 2026-09-16: without this, a rewrite requested
+    # while the automatic evaluate->generate loop already has a revision of
+    # this same draft in flight produces two `generate` jobs racing to
+    # create the same next version number — the second one crashes on
+    # article_drafts_version_unique instead of failing cleanly.
+    if has_pending_revision(draft_id):
+        raise ValidationFailure(
+            "this draft already has a revision in progress — wait for it to finish before requesting another rewrite"
+        )
 
     job_row = (
         db.table("jobs")

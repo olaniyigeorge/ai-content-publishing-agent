@@ -23,6 +23,8 @@ CHANNEL_LIMITS: dict[str, dict] = {
 
 MIN_VIABLE_CHARS = 40  # below this, a truncated post isn't worth publishing
 
+SOURCE_GROUNDING_FLOOR = 2  # rubric_scores["source_grounding"] at/below this = the dominant failure
+
 
 def check_article(body_markdown: str) -> dict:
     """Real word count, H1 presence, and link count for a generated article
@@ -47,6 +49,23 @@ def check_article(body_markdown: str) -> dict:
         "link_count": link_count,
         "violations": violations,
     }
+
+
+def is_ungroundable(*, source_ids_used: list, rubric_scores: dict) -> bool:
+    """True when a draft has zero source material AND the evaluator's own
+    rubric agrees source grounding is the (near-)floor problem — see
+    TESTING_FINDINGS.md, 2026-09-16: three full generate+evaluate cycles were
+    spent on a request whose only sources had been discarded as unusable,
+    because nothing distinguished "no sources, revise anyway" from "no
+    sources, revising can't help." Rewording a draft can't manufacture source
+    material that was never retrieved, so this is a signal to stop revising
+    and send it to a human immediately — not a 3rd/4th wasted Claude call."""
+    if source_ids_used:
+        return False
+    score = rubric_scores.get("source_grounding")
+    if score is None:
+        return False
+    return score <= SOURCE_GROUNDING_FLOOR
 
 
 class _TextExtractor(HTMLParser):

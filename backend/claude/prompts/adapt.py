@@ -51,12 +51,41 @@ Rules (channel-formatting-rules.md):
 - Write for a smart, busy reader.
 - Total body length between 250 and 600 words.
 
-Output valid HTML (content_format = "html") — most email clients need HTML,
-not markdown. Include the subject line as the first field inside content
-(e.g. a leading <h1> or comment marking it), and also report it in
-formatting_check.subject_line. Do not introduce any claim not already in the
-source article. formatting_check must include word_count, within_word_range,
-and subject_line.""",
+Output a complete, self-contained HTML email (content_format = "html") that
+follows the Koya email design system below exactly — this keeps every
+newsletter visually consistent instead of reinventing a layout each time.
+Email clients strip <style> blocks and external CSS unreliably, so every
+rule below must be an inline `style="..."` attribute, not a class or a
+<style> tag. Use a table-based layout (email-safe); do not use <div> flexbox/
+grid, which many clients ignore.
+
+KOYA EMAIL DESIGN SYSTEM:
+- Root: a single centered <table role="presentation" width="100%"
+  cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;">
+  containing one inner <table role="presentation" width="600"
+  style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;">.
+- Header band: a <tr><td style="background-color:#4338CA;padding:24px 32px;">
+  with "Koya" in <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">.
+- Body cell: <td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.6;">.
+  - Intro paragraph: <p style="margin:0 0 20px;font-size:16px;color:#1f2937;">.
+  - Section subheadings: <h2 style="margin:24px 0 8px;font-size:18px;color:#111827;">.
+  - Body paragraphs: <p style="margin:0 0 16px;">.
+  - Bullets: <ul style="margin:0 0 16px;padding-left:20px;"><li style="margin:0 0 8px;">.
+  - Optional secondary item: wrap in <table role="presentation" width="100%"
+    style="background-color:#F5F3FF;border-radius:8px;margin:24px 0;"><tr><td style="padding:16px;">.
+  - Call-to-action button: <table role="presentation"><tr><td style="border-radius:6px;background-color:#4338CA;">
+    <a href="#" style="display:inline-block;padding:12px 24px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">CTA TEXT</a></td></tr></table>
+    (use a real link if the source article/sources supply one, otherwise "#").
+  - Sign-off: <p style="margin:24px 0 0;color:#1f2937;">.
+- Footer band: <tr><td style="padding:20px 32px;background-color:#f4f4f7;color:#9ca3af;font-size:12px;text-align:center;">
+  "You're receiving this because you subscribed to Koya updates." — no unsubscribe link needed for this exercise.
+
+Return this whole HTML document as the content field, starting with
+<!doctype html>. Include the subject line as an HTML comment
+<!-- subject: ... --> as the very first line of content, and also report it
+in formatting_check.subject_line. Do not introduce any claim not already in
+the source article. formatting_check must include word_count,
+within_word_range, and subject_line.""",
 }
 
 

@@ -4,12 +4,32 @@ model's self-reported formatting_check / rubric pass."""
 from claude.quality_guards import (
     check_article,
     check_channel_adaptation,
+    is_ungroundable,
     truncate_to_limit,
 )
 from worker.handlers import adapt as adapt_handler
 
 REQUEST_ID = "00000000-0000-0000-0000-000000000050"
 DRAFT_ID = "00000000-0000-0000-0000-000000000051"
+
+
+def test_is_ungroundable_true_for_zero_sources_and_floor_score():
+    assert is_ungroundable(source_ids_used=[], rubric_scores={"source_grounding": 1}) is True
+    assert is_ungroundable(source_ids_used=[], rubric_scores={"source_grounding": 2}) is True
+
+
+def test_is_ungroundable_false_with_sources_even_at_floor_score():
+    assert is_ungroundable(source_ids_used=["src-1"], rubric_scores={"source_grounding": 1}) is False
+
+
+def test_is_ungroundable_false_with_zero_sources_but_decent_score():
+    # e.g. an evaluator that doesn't penalize an idea-only request for having
+    # no sources at all — the score itself, not just the source count, decides
+    assert is_ungroundable(source_ids_used=[], rubric_scores={"source_grounding": 3}) is False
+
+
+def test_is_ungroundable_false_when_score_missing():
+    assert is_ungroundable(source_ids_used=[], rubric_scores={}) is False
 
 
 def test_check_article_flags_short_body_missing_h1_and_no_links():

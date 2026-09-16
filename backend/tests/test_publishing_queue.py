@@ -22,7 +22,12 @@ def _seed(fake_db, content: str):
     ).execute()
 
 
-def test_successful_publish_marks_queue_and_adaptation_published(fake_db):
+def test_successful_publish_marks_queue_ready_to_publish(fake_db):
+    """EDGE_CASES.md #39: the publish adapter is a mock — it never actually
+    reaches the platform — so a successful mock "send" must land on
+    'ready_to_publish', not the honest terminal 'published'. The adaptation
+    itself is untouched here too; it only becomes 'published' once a human
+    manually confirms via the publishing-queue API (test_publishing_queue_api.py)."""
     _seed(fake_db, content="a normal linkedin post")
     job = {
         "id": "j1",
@@ -36,14 +41,19 @@ def test_successful_publish_marks_queue_and_adaptation_published(fake_db):
     worker_main.process_one_job(job)
 
     queue_row = fake_db.table("publishing_queue").select("*").eq("id", QUEUE_ID).execute().data[0]
-    assert queue_row["status"] == "published"
+    assert queue_row["status"] == "ready_to_publish"
     assert queue_row["last_error"] is None
+    assert queue_row.get("published_at") is None
+
+    adaptation_row = fake_db.table("channel_adaptations").select("*").eq("id", ADAPTATION_ID).execute().data[0]
+    assert adaptation_row["status"] == "queued"
 
 
-def test_successful_publish_finalizes_request_status_once_all_channels_published(fake_db):
-    """Only channel_adaptations/publishing_queue used to be updated on
-    publish — content_requests.status never moved off `queued`, so the
-    request list showed "queued" forever even after everything published."""
+def test_successful_publish_does_not_auto_finalize_request(fake_db):
+    """content_requests must not claim 'published' off the mock adapter alone
+    — only a human's manual publish confirmation (app/api/publishing.py)
+    finalizes the request, since that's the only point a real publish is
+    actually asserted to have happened."""
     _seed(fake_db, content="a normal linkedin post")
     job = {
         "id": "j1",
@@ -57,7 +67,7 @@ def test_successful_publish_finalizes_request_status_once_all_channels_published
     worker_main.process_one_job(job)
 
     request_row = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
-    assert request_row["status"] == "published"
+    assert request_row["status"] == "queued"
 
 
 def test_request_status_not_finalized_while_another_channel_still_pending(fake_db):

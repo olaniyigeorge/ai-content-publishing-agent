@@ -3,6 +3,27 @@ These are the guarantee that the evaluation loop and the formatting check are
 real, not prose the worker hopes the model followed.
 """
 
+from typing import NoReturn
+
+
+def require_fields(result: dict, keys: list[str], *, step: str, error_cls: type[Exception]) -> None:
+    """Structured-output schemas mark fields `required`, but that's a
+    description of intent, not a server-side guarantee (the tool isn't
+    declared `strict`) — a rare response can still omit one. Without this,
+    that shows up as a bare `KeyError('target_keywords')` in jobs.last_error /
+    stage_events — technically "not swallowed" but unreadable to a human
+    (TESTING_FINDINGS.md, 2026-09-16). This turns it into a clear, typed
+    error instead."""
+    missing = [k for k in keys if k not in result]
+    if missing:
+        _raise_missing_fields(step, missing, result, error_cls)
+
+
+def _raise_missing_fields(step: str, missing: list[str], result: dict, error_cls: type[Exception]) -> NoReturn:
+    raise error_cls(
+        f"Claude's {step} response was missing required field(s) {missing} — got: {sorted(result.keys())}"
+    )
+
 RUBRIC_CRITERIA = [
     "topic_relevance",
     "source_grounding",
@@ -118,6 +139,12 @@ SOURCE_SELECTION_SCHEMA = {
                     "usable": {
                         "type": "boolean",
                         "description": "False if the retrieved content had no usable article text (nav/ads/JS shell).",
+                    },
+                    "unusable_reason": {
+                        "type": "string",
+                        "description": "Required when usable is false: specifically why (e.g. 'page is a login/paywall "
+                        "wall', 'only navigation and footer boilerplate, no article body', 'JS-rendered shell with no "
+                        "text in the raw HTML'). Never a generic statement like 'not useful'.",
                     },
                 },
                 "required": ["source_id", "excerpt_selected", "relevance_notes", "usable"],

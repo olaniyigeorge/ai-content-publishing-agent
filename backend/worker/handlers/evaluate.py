@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 
 import claude.service as claude_service
 from app.config import get_settings
-from claude.quality_guards import check_article
+from claude.outputs import require_fields
+from claude.quality_guards import check_article, is_ungroundable
 from db.client import get_supabase
 from shared.enums import (
     DraftStatus,
@@ -13,6 +14,7 @@ from shared.enums import (
     RequestStatus,
     StageEventStatus,
 )
+from shared.errors import DraftEvaluationFailed
 
 
 def handle_evaluate(job: dict) -> None:
@@ -34,6 +36,12 @@ def handle_evaluate(job: dict) -> None:
         draft_title=draft["title"],
         draft_body=draft["body_markdown"],
         sources=sources,
+    )
+    require_fields(
+        result,
+        ["overall_status", "rubric_scores", "overall_score", "recommended_changes", "feedback"],
+        step="evaluation",
+        error_cls=DraftEvaluationFailed,
     )
 
     # Deterministic check, independent of the model's self-assessment: a
@@ -79,8 +87,15 @@ def handle_evaluate(job: dict) -> None:
     ).execute()
 
     at_cap = draft["version"] >= settings.max_revisions
+    # A draft with zero source_ids_used can't be fixed by revising the text —
+    # there's no source material to ground it in no matter how it's worded.
+    # Stop after this one attempt instead of spending the rest of the
+    # revision cap on cycles that were never going to pass (TESTING_FINDINGS.md).
+    ungroundable = not passed and is_ungroundable(
+        source_ids_used=draft["source_ids_used"], rubric_scores=result["rubric_scores"]
+    )
 
-    if passed or at_cap or result["overall_status"] == "reject":
+    if passed or at_cap or ungroundable or result["overall_status"] == "reject":
         db.table("article_drafts").update({"status": DraftStatus.EVALUATED.value}).eq("id", draft_id).execute()
         db.table("content_requests").update(
             {"status": RequestStatus.IN_REVIEW.value, "updated_at": datetime.now(UTC).isoformat()}
@@ -95,6 +110,20 @@ def handle_evaluate(job: dict) -> None:
                     "error_message": (
                         f"revision cap ({settings.max_revisions}) reached without passing evaluation; "
                         "sending to human review as-is"
+                    ),
+                }
+            ).execute()
+        elif ungroundable:
+            db.table("stage_events").insert(
+                {
+                    "content_request_id": request_id,
+                    "stage": PipelineStage.EVALUATION.value,
+                    "status": StageEventStatus.FAILED.value,
+                    "detail": {"draft_id": draft_id, "version": draft["version"]},
+                    "error_message": (
+                        "this draft has no source material to ground claims in, and revising the "
+                        "wording can't fix that — skipping the remaining automatic revisions and "
+                        "sending it to human review now instead of spending the full revision cap"
                     ),
                 }
             ).execute()

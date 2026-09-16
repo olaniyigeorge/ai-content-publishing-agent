@@ -70,6 +70,7 @@ class SourceOut(BaseModel):
     title: str | None
     excerpt_selected: str | None
     relevance_notes: str | None
+    discard_reason: str | None
     retrieval_method: SourceRetrievalMethod
     status: SourceStatus
     retrieved_at: datetime | None

@@ -75,6 +75,11 @@ def test_list_queue_is_enriched_with_channel_title_and_content(fake_db):
 
 
 def test_patch_status_manually_marks_published(fake_db):
+    """This manual confirmation is the *only* path to 'published' now
+    (EDGE_CASES.md #39 — the mock publish adapter only ever reaches
+    'ready_to_publish'). Confirming here must cascade to the channel
+    adaptation and finalize the content request, which the automated path
+    used to do on its own."""
     _seed(fake_db)
     client = _client()
     try:
@@ -89,6 +94,12 @@ def test_patch_status_manually_marks_published(fake_db):
 
     row = fake_db.table("publishing_queue").select("*").eq("id", QUEUE_ID).execute().data[0]
     assert row["status"] == "published"
+
+    adaptation_row = fake_db.table("channel_adaptations").select("*").eq("id", ADAPTATION_ID).execute().data[0]
+    assert adaptation_row["status"] == "published"
+
+    request_row = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
+    assert request_row["status"] == "published"
 
 
 def test_patch_status_rejects_unknown_status(fake_db):

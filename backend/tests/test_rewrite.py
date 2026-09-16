@@ -2,8 +2,11 @@
 targeted job is enqueued seeded with the current content + instructions,
 producing a new version rather than mutating the existing row."""
 
+import pytest
+
 from app.services.adaptation_service import rewrite_channel_adaptation
 from app.services.draft_service import rewrite_draft
+from shared.errors import ValidationFailure
 from worker.handlers import adapt as adapt_handler
 
 REQUEST_ID = "00000000-0000-0000-0000-000000000020"
@@ -68,6 +71,47 @@ def test_rewrite_draft_without_instructions_uses_default(fake_db):
     rewrite_draft(DRAFT_ID, None)
     job = fake_db.table("jobs").select("*").execute().data[0]
     assert "Rewrite" in job["payload"]["revision_instructions"]
+
+
+def test_rewrite_draft_rejects_when_a_revision_is_already_in_flight(fake_db):
+    """TESTING_FINDINGS.md, 2026-09-16: this is the exact race that produced
+    'duplicate key value violates unique constraint "article_drafts_version_unique"'
+    in manual testing — a rewrite requested while the automatic evaluate loop
+    already had a generate job pending for this draft. Both would have
+    computed the same next version number; this rejects the second one
+    up front instead of letting them race in the database."""
+    _seed_draft(fake_db)
+    fake_db.table("jobs").insert(
+        {
+            "job_type": "generate",
+            "reference_type": "article_draft",
+            "reference_id": DRAFT_ID,
+            "status": "pending",
+        }
+    ).execute()
+
+    with pytest.raises(ValidationFailure, match="already has a revision in progress"):
+        rewrite_draft(DRAFT_ID, "make it punchier")
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert len(jobs) == 1  # no second job was enqueued
+
+
+def test_rewrite_draft_allowed_once_prior_revision_job_finished(fake_db):
+    _seed_draft(fake_db)
+    fake_db.table("jobs").insert(
+        {
+            "job_type": "generate",
+            "reference_type": "article_draft",
+            "reference_id": DRAFT_ID,
+            "status": "succeeded",
+        }
+    ).execute()
+
+    rewrite_draft(DRAFT_ID, "make it punchier")  # should not raise
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert len(jobs) == 2  # the finished job, plus the new one just enqueued
 
 
 def test_rewrite_channel_adaptation_enqueues_scoped_adapt_job(fake_db):

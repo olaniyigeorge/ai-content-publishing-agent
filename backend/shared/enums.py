@@ -84,6 +84,7 @@ class AdaptationStatus(StrEnum):
 class QueueStatus(StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
+    READY_TO_PUBLISH = "ready_to_publish"
     PUBLISHED = "published"
     FAILED = "failed"
     DEAD_LETTER = "dead_letter"

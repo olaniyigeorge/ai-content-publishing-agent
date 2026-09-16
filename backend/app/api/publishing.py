@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 
+from app.services.request_state_service import maybe_finalize_request_status
 from auth.deps import get_current_user
 from db.client import get_supabase
 from shared.enums import QueueStatus
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/api/publishing-queue", tags=["publishing"])
 # sibling case: there's no way today to tell the system "I posted this myself."
 MANUAL_OVERRIDE_STATUSES = {
     QueueStatus.QUEUED.value,
+    QueueStatus.READY_TO_PUBLISH.value,
     QueueStatus.PUBLISHED.value,
     QueueStatus.FAILED.value,
     QueueStatus.CANCELLED.value,
@@ -110,14 +112,31 @@ def patch_status(queue_id: str, body: PublishingQueueStatusIn, user: dict = Depe
     adaptation outside the automated flow — e.g. they copied the content and
     posted it themselves, or a platform rejected it for a reason the worker
     can't detect. Any -> any among the real QueueStatus values; this is a
-    manual correction, not a state-machine transition."""
-    _get_or_404(queue_id)
+    manual correction, not a state-machine transition.
+
+    This is also the *primary* way an item ever reaches 'published': the mock
+    publish adapter only ever gets a queue item to 'ready_to_publish'
+    (EDGE_CASES.md #39 — it doesn't actually reach the platform), so a human
+    confirming here is what makes 'published' true. Confirming it also has to
+    cascade to the channel_adaptation and the content_request, which the
+    automated path used to do on its own."""
+    item = _get_or_404(queue_id)
     new_status = body.status.value
     if new_status not in MANUAL_OVERRIDE_STATUSES:
         raise InvalidStateTransition(f"'{new_status}' is not a manually settable status")
     update = {"status": new_status}
     if new_status == QueueStatus.PUBLISHED.value:
-        update["published_at"] = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC).isoformat()
+        update["published_at"] = now
+        db = get_supabase()
+        adaptation = (
+            db.table("channel_adaptations")
+            .update({"status": "published", "updated_at": now})
+            .eq("id", item["channel_adaptation_id"])
+            .execute()
+            .data[0]
+        )
+        maybe_finalize_request_status(adaptation["content_request_id"])
     updated = get_supabase().table("publishing_queue").update(update).eq("id", queue_id).execute().data[0]
     return _enrich([updated])[0]
 

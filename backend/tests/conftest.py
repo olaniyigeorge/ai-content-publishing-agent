@@ -26,6 +26,7 @@ def fake_db(monkeypatch):
         "app.services.request_state_service",
         "app.services.draft_service",
         "app.services.adaptation_service",
+        "app.services.job_guard",
         "app.api.publishing",
         "auth.service",
         "worker.handlers.research",

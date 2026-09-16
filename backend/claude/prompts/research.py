@@ -8,7 +8,10 @@ request's idea and target audience. For each source:
 
 - If the raw content contains no real article text (navigation, ads, cookie \
   banners, a JS-shell placeholder, or is otherwise empty/unusable), set \
-  usable=false and leave excerpt_selected empty.
+  usable=false, leave excerpt_selected empty, and write unusable_reason with \
+  the specific reason (e.g. "login/paywall wall", "only nav and footer \
+  boilerplate", "JS-rendered shell with no article text") — never a generic \
+  statement like "not useful".
 - Otherwise, select the single most relevant excerpt (a quote or tight \
   paraphrase, 1-4 sentences) that could ground a claim in the article.
 - Write relevance_notes explaining specifically why this excerpt matters for \

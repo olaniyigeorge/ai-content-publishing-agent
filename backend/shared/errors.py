@@ -44,6 +44,10 @@ class ResearchFailure(DomainError):
     status_code = 502
 
 
+class PlanningFailed(DomainError):
+    status_code = 502
+
+
 class DraftGenerationFailed(DomainError):
     status_code = 502
 

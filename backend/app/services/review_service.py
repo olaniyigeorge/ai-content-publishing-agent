@@ -5,6 +5,7 @@ only from here.
 
 from datetime import UTC, datetime
 
+from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
     DraftStatus,
@@ -101,6 +102,13 @@ def submit_review(content_request_id: str, body: HumanReviewIn, reviewer_user_id
             "id", content_request_id
         ).execute()
     elif body.decision == ReviewDecision.REVISE_REQUESTED:
+        # Same race guarded in draft_service.rewrite_draft — a reviewable
+        # draft shouldn't normally have an in-flight revision already, but
+        # this is cheap insurance against the same version-collision crash.
+        if has_pending_revision(draft["id"]):
+            raise InvalidStateTransition(
+                f"draft {draft['id']} already has a revision in progress — wait for it to finish first"
+            )
         db.table("jobs").insert(
             {
                 "job_type": JobType.GENERATE.value,
