@@ -19,6 +19,7 @@ from postgrest.exceptions import APIError
 # surface against a live Supabase project.
 UNIQUE_CONSTRAINTS = {
     "article_drafts": ("content_request_id", "option_label", "version"),
+    "channel_adaptations": ("article_draft_id", "channel"),
 }
 
 
@@ -46,6 +47,7 @@ class _Query:
         self._payload = None
         self._order_by: list[tuple[str, bool]] = []
         self._limit = None
+        self._on_conflict = None
 
     # --- filters ---
     def eq(self, field, value):
@@ -92,9 +94,10 @@ class _Query:
         self._payload = _check_json_serializable(payload)
         return self
 
-    def upsert(self, payload):
+    def upsert(self, payload, on_conflict=None):
         self._op = "upsert"
         self._payload = _check_json_serializable(payload)
+        self._on_conflict = on_conflict.split(",") if on_conflict else None
         return self
 
     def delete(self):
@@ -151,8 +154,18 @@ class _Query:
                         }
                     )
                 if self._op == "upsert":
-                    existing_idx = next((i for i, r in enumerate(rows) if r.get("id") == row.get("id")), None)
+                    conflict_key = self._on_conflict or ["id"]
+                    existing_idx = next(
+                        (
+                            i
+                            for i, r in enumerate(rows)
+                            if all(r.get(f) == row.get(f) for f in conflict_key)
+                        ),
+                        None,
+                    )
                     if existing_idx is not None:
+                        row["id"] = rows[existing_idx]["id"]
+                        row["created_at"] = rows[existing_idx].get("created_at")
                         rows[existing_idx] = row
                         inserted.append(row)
                         continue

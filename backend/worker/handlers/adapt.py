@@ -80,7 +80,7 @@ def handle_adapt(job: dict) -> None:
 
         adaptation_row = (
             db.table("channel_adaptations")
-            .insert(
+            .upsert(
                 {
                     "content_request_id": request_id,
                     "article_draft_id": draft_id,
@@ -89,7 +89,8 @@ def handle_adapt(job: dict) -> None:
                     "content_format": result["content_format"],
                     "formatting_check": formatting_check,
                     "status": adaptation_status,
-                }
+                },
+                on_conflict="article_draft_id,channel",
             )
             .execute()
             .data[0]

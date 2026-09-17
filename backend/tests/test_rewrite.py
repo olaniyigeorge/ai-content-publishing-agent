@@ -207,8 +207,10 @@ def test_rewrite_channel_adaptation_enqueues_scoped_adapt_job(fake_db):
 
 def test_handle_adapt_rewrite_only_touches_requested_channel(fake_db, monkeypatch):
     """A scoped rewrite job must not re-adapt the other channels, must not
-    reset content_requests.status, and must record the resulting content as a
-    new channel_adaptations row."""
+    reset content_requests.status, and must replace that channel's existing
+    channel_adaptations row (article_draft_id, channel) is unique in the real
+    schema, so a rewrite can't append a second row for the same channel
+    without violating channel_adaptations_unique)."""
     _seed_adaptation(fake_db)
     fake_db.table("content_requests").update({"status": "queued"}).eq("id", REQUEST_ID).execute()
 
@@ -238,8 +240,9 @@ def test_handle_adapt_rewrite_only_touches_requested_channel(fake_db, monkeypatc
     assert calls == ["x"]  # only the requested channel was touched
 
     adaptations = fake_db.table("channel_adaptations").select("*").eq("channel", "x").execute().data
-    assert len(adaptations) == 2  # original + the new rewritten version
-    assert any(a["content"] == "new shorter post" for a in adaptations)
+    assert len(adaptations) == 1  # replaces the existing row, doesn't duplicate it
+    assert adaptations[0]["content"] == "new shorter post"
+    assert adaptations[0]["id"] == ADAPTATION_ID  # same row, not a new id
 
     request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
     assert request["status"] == "queued"  # untouched by the scoped rewrite
