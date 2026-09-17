@@ -69,7 +69,7 @@ def list_access_rules(user: dict = Depends(get_current_user)) -> list[dict]:
 
 @router.post("/access-rules", response_model=AccessRuleOut)
 def create_access_rule(body: AccessRuleIn, user: dict = Depends(get_current_user)) -> dict:
-    payload = body.model_dump()
+    payload = body.model_dump(mode="json")
     payload["value"] = payload["value"].strip().lower()
     return get_supabase().table("access_rules").insert(payload).execute().data[0]
 

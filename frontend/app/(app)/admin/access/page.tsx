@@ -132,8 +132,7 @@ export default function AccessRulesPage() {
       <p className="mt-1 text-sm text-muted">
         Who can log in. An email or a whole domain (e.g. <span className="font-mono">koyatalent.com</span>) grants access —
         nobody else can request a login code. There is no separate admin role yet: any signed-in user, including you
-        ({user?.email}), can add or remove access here — see <span className="font-mono">DECISIONS.md</span> if this
-        needs to be locked down further before a wider rollout.
+        ({user?.email}), can add or remove access here.
       </p>
 
       <form

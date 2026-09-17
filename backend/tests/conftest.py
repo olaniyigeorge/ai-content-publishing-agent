@@ -29,6 +29,7 @@ def fake_db(monkeypatch):
         "app.services.job_guard",
         "app.api.publishing",
         "auth.service",
+        "auth.endpoints",
         "worker.handlers.research",
         "worker.handlers.plan",
         "worker.handlers.generate",

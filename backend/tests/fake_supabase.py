@@ -4,9 +4,20 @@ in_/is_/order/limit/execute). Good enough to unit-test service-layer logic
 without a live Supabase project or network access.
 """
 
+import json
 import uuid
 from copy import deepcopy
 from datetime import UTC, datetime
+
+
+def _check_json_serializable(payload):
+    """The real supabase-py client json.dumps()'s the payload with no custom
+    encoder — a raw datetime/UUID slipping through (e.g. from
+    `model.model_dump()` instead of `model.model_dump(mode="json")`) raises
+    TypeError there, not here. Do the same check in the fake so that bug
+    class is caught by tests instead of only surfacing in production."""
+    json.dumps(payload)
+    return payload
 
 
 class _Result:
@@ -61,17 +72,17 @@ class _Query:
 
     def insert(self, payload):
         self._op = "insert"
-        self._payload = payload
+        self._payload = _check_json_serializable(payload)
         return self
 
     def update(self, payload):
         self._op = "update"
-        self._payload = payload
+        self._payload = _check_json_serializable(payload)
         return self
 
     def upsert(self, payload):
         self._op = "upsert"
-        self._payload = payload
+        self._payload = _check_json_serializable(payload)
         return self
 
     def delete(self):

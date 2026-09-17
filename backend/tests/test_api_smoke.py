@@ -55,3 +55,28 @@ def test_upload_endpoint_requires_auth():
     client = TestClient(app)
     resp = client.post("/api/uploads", files={"file": ("a.png", b"data", "image/png")})
     assert resp.status_code == 401
+
+
+def test_create_access_rule_with_expiry_is_json_serializable(fake_db, monkeypatch):
+    """Regression test: AccessRuleIn.model_dump() (without mode='json') left
+    expires_at as a Python datetime, which the Supabase client's insert()
+    tried to json.dumps() and raised TypeError. Caught by hand when the
+    admin access-rules UI tried to grant access with an expiry set."""
+    import auth.deps as auth_deps
+
+    app.dependency_overrides[auth_deps.get_current_user] = lambda: {"id": "u1", "email": "a@koyatalent.com"}
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/auth/access-rules",
+            json={
+                "type": "email",
+                "value": "new-person@koyatalent.com",
+                "enabled": True,
+                "expires_at": "2027-01-01T00:00:00Z",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["value"] == "new-person@koyatalent.com"
+    finally:
+        app.dependency_overrides.pop(auth_deps.get_current_user, None)
