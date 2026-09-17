@@ -38,7 +38,7 @@ const CYCLE_STAGES = new Set(["generation", "evaluation"]);
 
 const REVISION_CAP_PREFIX = "revision cap (";
 
-function StatusIcon({ stage, status }: { stage: string; status: "started" | "succeeded" | "failed" }) {
+function StatusIcon({ stage, status }: { stage: string; status: "started" | "succeeded" | "retrying" | "failed" }) {
   if (status === "succeeded") {
     return (
       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white ring-4 ring-[var(--background)]">
@@ -53,6 +53,26 @@ function StatusIcon({ stage, status }: { stage: string; status: "started" | "suc
       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white ring-4 ring-[var(--background)]">
         <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
           <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+  if (status === "retrying") {
+    // Deliberately not red — this is a transient failure the worker is
+    // about to retry on its own, not a dead end that needs a human.
+    return (
+      <span
+        className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white ring-4 ring-[var(--background)]"
+        title="Hit a transient error — retrying automatically"
+      >
+        <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+          <path
+            d="M13.5 8a5.5 5.5 0 1 1-1.6-3.87M13.5 2.5v3h-3"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </span>
     );
@@ -191,6 +211,15 @@ function EventRow({
             checks (see the feedback on that draft above). Rather than loop forever, it was sent to you to review
             and decide manually.
           </p>
+        ) : ev.status === "retrying" ? (
+          ev.error_message && (
+            <p className="mt-1 text-xs text-amber-600">
+              {ev.error_message}
+              {typeof ev.detail?.attempts === "number" && typeof ev.detail?.max_attempts === "number" && (
+                <> — retrying (attempt {ev.detail.attempts}/{ev.detail.max_attempts})</>
+              )}
+            </p>
+          )
         ) : (
           ev.error_message && <p className="mt-1 text-xs text-red-600">{ev.error_message}</p>
         )}

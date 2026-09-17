@@ -42,6 +42,16 @@ class SourceStatus(StrEnum):
     DISCARDED = "discarded"
 
 
+class SourceConfidence(StrEnum):
+    """Independent of status: a `selected` source can still be `thin` —
+    real, usable evidence that's weak (single low-authority source,
+    outdated, tangential) rather than solidly grounded. Never hidden from
+    the reviewer; see claude/prompts/research.py."""
+
+    STRONG = "strong"
+    THIN = "thin"
+
+
 class DraftStatus(StrEnum):
     DRAFT = "draft"
     EVALUATED = "evaluated"
@@ -130,6 +140,10 @@ class PipelineStage(StrEnum):
 class StageEventStatus(StrEnum):
     STARTED = "started"
     SUCCEEDED = "succeeded"
+    RETRYING = "retrying"
+    """A job attempt failed but the worker will automatically retry it —
+    distinct from FAILED so the UI doesn't show a hard red error for
+    something that's still self-healing (see worker/main.py)."""
     FAILED = "failed"
 
 

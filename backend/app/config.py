@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     """EDGE_CASES.md #24: hard cap on the evaluate->generate revision loop so
     a draft that never clears the rubric doesn't burn Claude calls forever."""
 
+    max_gap_fill_attempts: int = 2
+    """Cap on how many extra, evaluation-informed web searches a request
+    without a user-supplied source URL gets when a draft's grounding comes
+    back empty or thin. Bounded separately from max_revisions so a search
+    that finds nothing useful doesn't also burn the revision cap."""
+
     session_cookie_name: str = "koya_session"
     session_ttl_minutes: int = 60
     otp_ttl_minutes: int = 10

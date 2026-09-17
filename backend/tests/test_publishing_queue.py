@@ -92,6 +92,10 @@ def test_request_status_not_finalized_while_another_channel_still_pending(fake_d
 
 
 def test_failed_publish_below_max_attempts_stays_queued_for_retry(fake_db):
+    """A transient failure the worker will retry on its own isn't a hard
+    error — the stage_events row for it must say 'retrying', not 'failed',
+    so the UI doesn't show a red hard-failure icon for something that's
+    still self-healing."""
     _seed(fake_db, content=f"a post {FORCE_FAIL_MARKER}")
     job = {
         "id": "j2",
@@ -109,8 +113,14 @@ def test_failed_publish_below_max_attempts_stays_queued_for_retry(fake_db):
     assert queue_row["last_error"] is not None
     assert queue_row["next_attempt_at"] is not None
 
+    events = fake_db.table("stage_events").select("*").eq("content_request_id", REQUEST_ID).execute().data
+    assert events[-1]["status"] == "retrying"
+    assert events[-1]["detail"]["will_retry"] is True
+
 
 def test_failed_publish_at_max_attempts_goes_dead_letter(fake_db):
+    """Once attempts are exhausted, this really is a hard failure — the
+    stage_events row should say so, unlike the below-cap retry case above."""
     _seed(fake_db, content=f"a post {FORCE_FAIL_MARKER}")
     job = {
         "id": "j3",
@@ -126,3 +136,7 @@ def test_failed_publish_at_max_attempts_goes_dead_letter(fake_db):
     queue_row = fake_db.table("publishing_queue").select("*").eq("id", QUEUE_ID).execute().data[0]
     assert queue_row["status"] == "dead_letter"
     assert queue_row["next_attempt_at"] is None
+
+    events = fake_db.table("stage_events").select("*").eq("content_request_id", REQUEST_ID).execute().data
+    assert events[-1]["status"] == "failed"
+    assert events[-1]["detail"]["will_retry"] is False

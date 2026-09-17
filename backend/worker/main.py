@@ -113,12 +113,24 @@ def process_one_job(job: dict) -> None:
         ).eq("id", job["id"]).execute()
 
         if request_id:
+            # A transient failure the worker will retry isn't the same as a
+            # dead end — the previous version marked every attempt FAILED
+            # (hard red error in the UI) even when the job was about to
+            # succeed on retry 2. Only an exhausted job is a real failure.
             db.table("stage_events").insert(
                 {
                     "content_request_id": request_id,
                     "stage": STAGE_FOR_JOB_TYPE.get(job["job_type"], PipelineStage.PUBLISHING.value),
-                    "status": StageEventStatus.FAILED.value,
-                    "detail": {"job_id": job["id"], "attempts": job["attempts"]},
+                    "status": StageEventStatus.FAILED.value
+                    if outcome["exhausted"]
+                    else StageEventStatus.RETRYING.value,
+                    "detail": {
+                        "job_id": job["id"],
+                        "attempts": job["attempts"],
+                        "max_attempts": job["max_attempts"],
+                        "will_retry": not outcome["exhausted"],
+                        "next_attempt_at": outcome["next_attempt_at"],
+                    },
                     "error_message": str(exc),
                 }
             ).execute()

@@ -19,12 +19,18 @@ from claude.prompts import research as research_prompts
 from shared.enums import JobType
 
 
-def select_sources(*, raw_idea: str | None, target_audience: str, sources: list[dict]) -> dict:
+def select_sources(
+    *,
+    raw_idea: str | None,
+    target_audience: str,
+    sources: list[dict],
+    research_focus: str | None = None,
+) -> dict:
     return structured_chat(
         model=model_for(JobType.RESEARCH),
         system=research_prompts.SYSTEM,
         user_message=research_prompts.build_user_message(
-            raw_idea=raw_idea, target_audience=target_audience, sources=sources
+            raw_idea=raw_idea, target_audience=target_audience, sources=sources, research_focus=research_focus
         ),
         output_schema=SOURCE_SELECTION_SCHEMA,
         tool_name="select_sources",

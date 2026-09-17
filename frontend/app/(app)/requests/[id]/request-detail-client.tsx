@@ -330,6 +330,9 @@ export function RequestDetailClient({ id }: { id: string }) {
                     d.status !== "discarded" &&
                     Date.now() - awaitingRewrite.startedAt < REWRITE_TIMEOUT_MS;
                   const isEditing = editingDraftId === d.id;
+                  const thinSourceCount = d.source_ids_used.filter(
+                    (sid) => sources.find((s) => s.id === sid)?.confidence === "thin"
+                  ).length;
 
                   return (
                     <div key={d.id} className="glow-card rounded-xl border border-surface-border bg-surface-card p-4 transition-shadow duration-200">
@@ -349,6 +352,23 @@ export function RequestDetailClient({ id }: { id: string }) {
                         </button>
                         <div className="flex shrink-0 items-center gap-2">
                           {isBeingRewritten && <RewritingIndicator />}
+                          {thinSourceCount > 0 && (
+                            <span
+                              className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                              title="This option relies on weak evidence — see Sources below before approving"
+                            >
+                              {thinSourceCount} thin source{thinSourceCount === 1 ? "" : "s"}
+                            </span>
+                          )}
+                          {evaluation && evaluation.unsupported_claims.length > 0 && (
+                            <span
+                              className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                              title="Claims flagged as unbacked or overstated by the evaluator"
+                            >
+                              {evaluation.unsupported_claims.length} flagged claim
+                              {evaluation.unsupported_claims.length === 1 ? "" : "s"}
+                            </span>
+                          )}
                           <StatusBadge status={d.status} />
                         </div>
                       </div>
@@ -496,11 +516,25 @@ export function RequestDetailClient({ id }: { id: string }) {
                               found by agent
                             </span>
                           )}
+                          {s.status === "selected" && s.confidence === "thin" && (
+                            <span
+                              className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
+                              title={s.confidence_reason ?? "Weak evidence — real, but not strongly supported"}
+                            >
+                              thin evidence
+                            </span>
+                          )}
                           <StatusBadge status={s.status} />
                         </div>
                       </div>
                       {s.excerpt_selected && <p className="mt-1 text-muted">&ldquo;{s.excerpt_selected}&rdquo;</p>}
                       {s.relevance_notes && <p className="mt-1 text-muted/70">{s.relevance_notes}</p>}
+                      {s.status === "selected" && s.confidence === "thin" && s.confidence_reason && (
+                        <p className="mt-1 text-amber-700">
+                          Cited, but weak evidence: {s.confidence_reason} — claims from this source should read as
+                          hedged, not stated as settled fact. Discard it below if you&apos;d rather the draft not use it.
+                        </p>
+                      )}
                       {(s.status === "discarded" || s.status === "failed") && s.discard_reason && (
                         <p className="mt-1 text-amber-700">
                           {s.status === "failed" ? "Couldn't retrieve this source: " : "Not used: "}
@@ -524,6 +558,7 @@ export function RequestDetailClient({ id }: { id: string }) {
                               type="button"
                               disabled={pending}
                               onClick={() => handleSourceOverride(s.id, "discarded")}
+                              title="If the current draft cites this source, discarding it queues a regeneration without it"
                               className="rounded-md border border-surface-border px-2 py-1 text-xs text-muted hover:bg-surface-card-hover disabled:opacity-60"
                             >
                               discard
@@ -952,6 +987,18 @@ function EvaluationSummary({
         </span>
       </div>
       <p className="mt-1 text-muted">{evaluation.feedback}</p>
+      {evaluation.unsupported_claims?.length > 0 && (
+        <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2">
+          <p className="text-xs font-medium text-amber-800">
+            Claims not backed by a provided source, or stated more confidently than the evidence supports:
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-amber-800">
+            {evaluation.unsupported_claims.map((claim, i) => (
+              <li key={i}>{claim}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {Object.keys(evaluation.rubric_scores ?? {}).length > 0 && (
         <>
           <button

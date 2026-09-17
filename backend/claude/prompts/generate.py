@@ -20,6 +20,13 @@ Grounding rules (non-negotiable):
   of the provided source excerpts. If you cannot support a claim with a
   provided excerpt, do not make it.
 - Do not invent quotes, statistics, studies, or sources.
+- Each source below is marked strong or thin. Never state a claim from a
+  thin source as flat, settled fact — attribute and hedge it instead (e.g.
+  "one report suggests...", "according to [source], though this hasn't been
+  widely verified..."). If a thin source is the only support for something
+  the article would otherwise assert confidently, either hedge it visibly or
+  leave it out rather than presenting it with more certainty than the
+  evidence actually has.
 
 Voice:
 - Write like a knowledgeable person explaining something to a reader, not
@@ -43,7 +50,10 @@ def build_user_message(
     previous_body_markdown: str | None = None,
 ) -> str:
     source_blocks = "\n".join(
-        f"- source_id: {s['id']} | url: {s['url']} | excerpt: {s['excerpt_selected']}" for s in sources
+        f"- source_id: {s['id']} | url: {s['url']} | confidence: {s.get('confidence', 'strong')}"
+        + (f" ({s['confidence_reason']})" if s.get("confidence") == "thin" and s.get("confidence_reason") else "")
+        + f" | excerpt: {s['excerpt_selected']}"
+        for s in sources
     )
     parts = [
         f"Content idea: {raw_idea or '(none provided)'}",

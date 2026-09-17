@@ -19,6 +19,7 @@ export type RequestStatus =
 export type AttachmentType = "url" | "image" | "file";
 export type SourceRetrievalMethod = "url_provided" | "web_search";
 export type SourceStatus = "retrieved" | "failed" | "selected" | "discarded";
+export type SourceConfidence = "strong" | "thin";
 export type DraftStatus = "draft" | "evaluated" | "revised" | "selected" | "discarded";
 export type EvaluatedBy = "ai" | "human";
 export type ReviewDecision = "approved" | "rejected" | "revise_requested" | "option_selected";
@@ -33,7 +34,7 @@ export type QueueStatus =
   | "failed"
   | "dead_letter"
   | "cancelled";
-export type StageEventStatus = "started" | "succeeded" | "failed";
+export type StageEventStatus = "started" | "succeeded" | "retrying" | "failed";
 export type JobType = "research" | "plan" | "generate" | "evaluate" | "adapt" | "publish";
 
 export interface MeResponse {
@@ -84,6 +85,7 @@ export interface ContentRequestOut {
   target_audience: string;
   supporting_material: Record<string, unknown> | null;
   status: RequestStatus;
+  gap_fill_attempts: number;
   submitted_by_user_id: string;
   created_at: string;
   updated_at: string;
@@ -100,6 +102,8 @@ export interface SourceOut {
   discard_reason: string | null;
   retrieval_method: SourceRetrievalMethod;
   status: SourceStatus;
+  confidence: SourceConfidence;
+  confidence_reason: string | null;
   retrieved_at: string | null;
   created_at: string;
 }
@@ -126,6 +130,8 @@ export interface EvaluationOut {
   passed_threshold: boolean;
   feedback: string;
   revision_instructions: string | null;
+  unsupported_claims: string[];
+  sections_to_revise: string[];
   evaluated_by: EvaluatedBy;
   created_at: string;
 }

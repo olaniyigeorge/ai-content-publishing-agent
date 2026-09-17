@@ -1,7 +1,9 @@
 from datetime import UTC, datetime
 
+from app.services.job_guard import has_pending_revision
+from app.services.review_service import REVIEWABLE_DRAFT_STATUSES
 from db.client import get_supabase
-from shared.enums import AdaptationStatus, RequestStatus
+from shared.enums import AdaptationStatus, JobReferenceType, JobType, RequestStatus
 from shared.errors import NotFound
 from shared.models import (
     ArticleDraftOut,
@@ -113,7 +115,12 @@ def override_source_status(request_id: str, source_id: str, body: SourceOverride
     """A human reviewer's manual selected/discarded call on a source,
     overriding whatever claude_service.select_sources originally decided
     during the research step. Kept separate from that automated pass rather
-    than re-running it, since the reviewer's judgment is meant to be final."""
+    than re-running it, since the reviewer's judgment is meant to be final.
+
+    Discarding a source the current draft actually relied on isn't just a
+    label change — the draft may still be citing it. Regenerate rather than
+    leave a reviewer-rejected source silently still backing the text on
+    screen."""
     db = get_supabase()
     rows = db.table("sources").select("*").eq("id", source_id).eq("content_request_id", request_id).execute().data
     if not rows:
@@ -125,7 +132,53 @@ def override_source_status(request_id: str, source_id: str, body: SourceOverride
     else:
         update["discard_reason"] = None
     updated = db.table("sources").update(update).eq("id", source_id).execute().data[0]
+
+    if body.status == "discarded":
+        _regenerate_drafts_using_discarded_source(db, request_id, source_id, body.reason)
+
     return SourceOut(**updated)
+
+
+def _regenerate_drafts_using_discarded_source(
+    db, request_id: str, source_id: str, reason: str | None
+) -> None:
+    drafts = (
+        db.table("article_drafts")
+        .select("*")
+        .eq("content_request_id", request_id)
+        .in_("status", list(REVIEWABLE_DRAFT_STATUSES))
+        .execute()
+        .data
+    )
+    affected = [d for d in drafts if source_id in (d.get("source_ids_used") or [])]
+    if not affected:
+        return
+
+    now = datetime.now(UTC).isoformat()
+    instructions = (
+        "A reviewer discarded one of the sources this draft relied on"
+        + (f" ({reason})" if reason else "")
+        + ". Regenerate without relying on it — if it was the only support for a claim, either "
+        "find support in another provided source, hedge the claim as unverified, or drop it "
+        "rather than restating it as fact."
+    )
+    for draft in affected:
+        # Same race this guards against elsewhere (TESTING_FINDINGS.md,
+        # 2026-09-16): don't queue a second revision if one against this
+        # draft is already in flight.
+        if has_pending_revision(draft["id"]):
+            continue
+        db.table("jobs").insert(
+            {
+                "job_type": JobType.GENERATE.value,
+                "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
+                "reference_id": draft["id"],
+                "payload": {"revision_instructions": instructions},
+            }
+        ).execute()
+        db.table("content_requests").update({"status": RequestStatus.REVISING.value, "updated_at": now}).eq(
+            "id", request_id
+        ).execute()
 
 
 def get_usage_summary() -> UsageSummaryOut:

@@ -99,13 +99,14 @@ def test_passing_evaluation_marks_draft_evaluated_no_further_generate(fake_db, m
     assert draft["status"] == "evaluated"
 
 
-def test_ungroundable_draft_skips_remaining_revisions_below_cap(fake_db, monkeypatch):
-    """TESTING_FINDINGS.md, 2026-09-16: a draft with zero source_ids_used and
-    a floor source_grounding score can't be fixed by revising the wording —
-    it should go straight to human review after this one attempt, not spend
-    the rest of the revision cap on cycles that can't pass."""
+def test_ungroundable_draft_with_no_source_url_triggers_gap_fill_research(fake_db, monkeypatch):
+    """A draft with zero source_ids_used and a floor source_grounding score
+    can't be fixed by revising the wording alone — but if nobody gave this
+    request a source URL, the system gets one more capped chance to search
+    again (aimed at what the evaluation just flagged) before giving up on
+    grounding and escalating to a human."""
     settings = get_settings()
-    assert settings.max_revisions > 1  # the guard's value is stopping *before* the cap
+    assert settings.max_gap_fill_attempts > 0
     _seed_draft(fake_db, version=1)
     ungroundable_result = {
         "overall_status": "revise",
@@ -121,13 +122,75 @@ def test_ungroundable_draft_skips_remaining_revisions_below_cap(fake_db, monkeyp
     evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
 
     jobs = fake_db.table("jobs").select("*").execute().data
-    assert not any(j["job_type"] == "generate" for j in jobs)  # no further revision enqueued
+    assert not any(j["job_type"] == "generate" for j in jobs)  # not revised directly
+    assert any(
+        j["job_type"] == "research" and j["payload"].get("gap_fill_for_draft_id") == DRAFT_ID for j in jobs
+    )
+    draft = fake_db.table("article_drafts").select("*").eq("id", DRAFT_ID).execute().data[0]
+    assert draft["status"] == "draft"  # not finalized yet — waiting on the gap-fill search
+    request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
+    assert request["gap_fill_attempts"] == 1
+    assert request["status"] == "researching"
+
+
+def test_ungroundable_draft_escalates_once_gap_fill_attempts_are_exhausted(fake_db, monkeypatch):
+    """Gap-fill is capped — once a request has already used up its
+    attempts, an ungroundable draft goes straight to human review exactly
+    as before this feature existed, instead of searching forever."""
+    settings = get_settings()
+    _seed_draft(fake_db, version=1)
+    fake_db.table("content_requests").update({"gap_fill_attempts": settings.max_gap_fill_attempts}).eq(
+        "id", REQUEST_ID
+    ).execute()
+    ungroundable_result = {
+        "overall_status": "revise",
+        "rubric_scores": {"source_grounding": 1, "topic_relevance": 4},
+        "overall_score": 2.4,
+        "unsupported_claims": ["a claim with no source"],
+        "sections_to_revise": ["body"],
+        "recommended_changes": ["cite a source"],
+        "feedback": "no source material to ground this in",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: ungroundable_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert not any(j["job_type"] in ("generate", "research") for j in jobs)  # exhausted, not retried again
     draft = fake_db.table("article_drafts").select("*").eq("id", DRAFT_ID).execute().data[0]
     assert draft["status"] == "evaluated"  # sent to human review, not stuck at "draft"
     events = fake_db.table("stage_events").select("*").eq("content_request_id", REQUEST_ID).execute().data
     assert any(
         e["status"] == "failed" and "can't fix" in (e.get("error_message") or "") for e in events
     )
+
+
+def test_ungroundable_draft_with_a_source_url_skips_gap_fill_and_escalates(fake_db, monkeypatch):
+    """If the content manager already gave a source URL, the explicit-source
+    path already ran — searching the open web on top of an explicit source
+    that turned out unusable isn't the same recovery, so this still goes
+    straight to human review rather than gap-filling."""
+    _seed_draft(fake_db, version=1)
+    fake_db.table("intake_attachments").insert(
+        {"id": "00000000-0000-0000-0000-000000000020", "content_request_id": REQUEST_ID, "type": "url"}
+    ).execute()
+    ungroundable_result = {
+        "overall_status": "revise",
+        "rubric_scores": {"source_grounding": 1, "topic_relevance": 4},
+        "overall_score": 2.4,
+        "unsupported_claims": ["a claim with no source"],
+        "sections_to_revise": ["body"],
+        "recommended_changes": ["cite a source"],
+        "feedback": "no source material to ground this in",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: ungroundable_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert not any(j["job_type"] in ("generate", "research") for j in jobs)
+    draft = fake_db.table("article_drafts").select("*").eq("id", DRAFT_ID).execute().data[0]
+    assert draft["status"] == "evaluated"
 
 
 def test_low_source_grounding_with_real_sources_still_revises_normally(fake_db, monkeypatch):
@@ -164,6 +227,83 @@ def test_low_source_grounding_with_real_sources_still_revises_normally(fake_db, 
 
     jobs = fake_db.table("jobs").select("*").execute().data
     assert any(j["job_type"] == "generate" for j in jobs)  # normal revision loop, not short-circuited
+
+
+def test_thin_only_sources_with_no_source_url_trigger_gap_fill(fake_db, monkeypatch):
+    """A draft that DOES have source_ids_used, but every one of them is a
+    thin, weak, autonomously-found source (not zero sources — is_ungroundable
+    alone wouldn't catch this) should still get a gap-fill search rather than
+    just cycling revisions against wording that can't manufacture stronger
+    evidence."""
+    fake_db.table("content_requests").insert(
+        {"id": REQUEST_ID, "status": "evaluating", "target_audience": "SaaS marketers"}
+    ).execute()
+    fake_db.table("sources").insert(
+        {
+            "id": "00000000-0000-0000-0000-000000000099",
+            "content_request_id": REQUEST_ID,
+            "url": "https://example.com/thin-blog-post",
+            "retrieval_method": "web_search",
+            "status": "selected",
+            "confidence": "thin",
+            "confidence_reason": "single personal blog post, no data or citations",
+        }
+    ).execute()
+    fake_db.table("article_drafts").insert(
+        {
+            "id": DRAFT_ID,
+            "content_request_id": REQUEST_ID,
+            "title": "Draft",
+            "body_markdown": _VALID_BODY,
+            "version": 1,
+            "option_label": "A",
+            "source_ids_used": ["00000000-0000-0000-0000-000000000099"],
+            "status": "draft",
+        }
+    ).execute()
+    weak_but_present_result = {
+        "overall_status": "revise",
+        "rubric_scores": {"source_grounding": 2},
+        "overall_score": 2.6,
+        "unsupported_claims": ["a claim only loosely tied to the thin source"],
+        "sections_to_revise": ["body"],
+        "recommended_changes": ["find stronger support or hedge the claim"],
+        "feedback": "only thin evidence available",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: weak_but_present_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert any(j["job_type"] == "research" and j["payload"].get("gap_fill_for_draft_id") == DRAFT_ID for j in jobs)
+    assert not any(j["job_type"] == "generate" for j in jobs)
+
+
+def test_model_claimed_pass_is_overridden_by_unsupported_claims(fake_db, monkeypatch):
+    """The evaluate prompt asks the model to only say 'pass' when
+    unsupported_claims is empty, but that's an instruction, not a
+    guarantee — this enforces it server-side so a confidently-worded 'pass'
+    can't carry an unresolved unsupported claim through to a human reviewer
+    as if the content were fully backed."""
+    _seed_draft(fake_db, version=1)
+    inconsistent_pass = {
+        "overall_status": "pass",
+        "rubric_scores": {},
+        "overall_score": 4.8,
+        "unsupported_claims": ["a stat with no source behind it"],
+        "sections_to_revise": [],
+        "recommended_changes": [],
+        "feedback": "looks great",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: inconsistent_pass)
+
+    evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
+
+    evaluations = fake_db.table("evaluations").select("*").execute().data
+    assert evaluations[0]["passed_threshold"] is False
+    assert "[unsupported claim]" in evaluations[0]["revision_instructions"]
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert any(j["job_type"] == "generate" for j in jobs)  # sent back for revision, not approved as-is
 
 
 def test_evaluation_missing_overall_score_raises_clear_error(fake_db, monkeypatch):

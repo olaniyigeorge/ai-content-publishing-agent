@@ -3,9 +3,10 @@ from datetime import UTC, datetime
 import claude.service as claude_service
 from app.config import get_settings
 from claude.outputs import require_fields
-from claude.quality_guards import check_article, is_ungroundable
+from claude.quality_guards import SOURCE_GROUNDING_FLOOR, check_article, is_ungroundable
 from db.client import get_supabase
 from shared.enums import (
+    AttachmentType,
     DraftStatus,
     EvaluatedBy,
     JobReferenceType,
@@ -43,15 +44,25 @@ def handle_evaluate(job: dict) -> None:
         step="evaluation",
         error_cls=DraftEvaluationFailed,
     )
+    unsupported_claims = result.get("unsupported_claims") or []
+    sections_to_revise = result.get("sections_to_revise") or []
 
-    # Deterministic check, independent of the model's self-assessment: a
+    # Deterministic checks, independent of the model's self-assessment: a
     # rubric "pass" can't override a hard length/structure violation
-    # (EDGE_CASES.md-style guard — see claude/quality_guards.py).
+    # (EDGE_CASES.md-style guard — see claude/quality_guards.py), and it
+    # can't override the model's own unsupported_claims list either. The
+    # prompt (claude/prompts/evaluate.py) already instructs "if pass, zero
+    # unsupported_claims" — but that's a request to the model, not a
+    # guarantee. Enforcing it here, not just asking for it, is what stops a
+    # confidently-worded "pass" from carrying an unresolved unsupported claim
+    # through to a human reviewer as if it were solid.
     guard = check_article(draft["body_markdown"])
-    passed = result["overall_status"] == "pass" and not guard["violations"]
+    passed = result["overall_status"] == "pass" and not guard["violations"] and not unsupported_claims
     revision_notes = list(result["recommended_changes"])
     if guard["violations"]:
         revision_notes = [f"[hard guard] {v}" for v in guard["violations"]] + revision_notes
+    if unsupported_claims and result["overall_status"] == "pass":
+        revision_notes = [f"[unsupported claim] {c}" for c in unsupported_claims] + revision_notes
 
     evaluation_row = (
         db.table("evaluations")
@@ -63,6 +74,8 @@ def handle_evaluate(job: dict) -> None:
                 "passed_threshold": passed,
                 "feedback": result["feedback"],
                 "revision_instructions": None if passed else ("; ".join(revision_notes) or result["feedback"]),
+                "unsupported_claims": unsupported_claims,
+                "sections_to_revise": sections_to_revise,
                 "evaluated_by": EvaluatedBy.AI.value,
             }
         )
@@ -80,7 +93,7 @@ def handle_evaluate(job: dict) -> None:
                 "version": draft["version"],
                 "passed_threshold": passed,
                 "overall_status": result["overall_status"],
-                "unsupported_claims": result["unsupported_claims"],
+                "unsupported_claims": unsupported_claims,
                 "quality_guard": guard,
             },
         }
@@ -94,6 +107,73 @@ def handle_evaluate(job: dict) -> None:
     ungroundable = not passed and is_ungroundable(
         source_ids_used=draft["source_ids_used"], rubric_scores=result["rubric_scores"]
     )
+    grounding_score = result["rubric_scores"].get("source_grounding")
+    grounding_is_weak = not passed and grounding_score is not None and grounding_score <= SOURCE_GROUNDING_FLOOR
+    # Only "no real evidence" cases (zero sources, or every source actually
+    # used came back thin) call for searching again — a low score against
+    # sources that do exist and aren't thin means the draft just did a poor
+    # job grounding in material that's already there, which revising the
+    # wording can genuinely fix (test_low_source_grounding_with_real_sources_
+    # still_revises_normally).
+    has_only_thin_sources = bool(sources) and all(s.get("confidence") == "thin" for s in sources)
+    grounding_has_no_real_evidence = ungroundable or (grounding_is_weak and has_only_thin_sources)
+
+    # If nobody gave this request a source URL, the only sources it has ever
+    # had are whatever the autonomous web search found — and that search
+    # only ever ran once, blind to what the draft actually turned out to need.
+    # Before giving up on grounding (or spending the rest of the revision cap
+    # revising wording that can't fix a sourcing gap), give it a small,
+    # capped number of chances to search again — this time aimed specifically
+    # at what the evaluation just flagged.
+    has_source_url = any(
+        a["type"] == AttachmentType.URL.value
+        for a in db.table("intake_attachments").select("type").eq("content_request_id", request_id).execute().data
+    )
+    can_gap_fill = (
+        not passed
+        and not at_cap
+        and not has_source_url
+        and grounding_has_no_real_evidence
+        and request_row.get("gap_fill_attempts", 0) < settings.max_gap_fill_attempts
+    )
+
+    if can_gap_fill:
+        research_focus = "; ".join([*unsupported_claims, result["feedback"]])
+        db.table("content_requests").update(
+            {
+                "gap_fill_attempts": request_row.get("gap_fill_attempts", 0) + 1,
+                "status": RequestStatus.RESEARCHING.value,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        ).eq("id", request_id).execute()
+        db.table("stage_events").insert(
+            {
+                "content_request_id": request_id,
+                "stage": PipelineStage.RESEARCH.value,
+                "status": StageEventStatus.STARTED.value,
+                "detail": {
+                    "draft_id": draft_id,
+                    "version": draft["version"],
+                    "reason": "no source URL was given and grounding is empty or thin — searching again, "
+                    "this time aimed at what the evaluation flagged, instead of revising wording that can't "
+                    "fix a sourcing gap",
+                    "research_focus": research_focus,
+                },
+            }
+        ).execute()
+        db.table("jobs").insert(
+            {
+                "job_type": JobType.RESEARCH.value,
+                "reference_type": JobReferenceType.CONTENT_REQUEST.value,
+                "reference_id": request_id,
+                "payload": {
+                    "gap_fill_for_draft_id": draft_id,
+                    "research_focus": research_focus,
+                    "revision_instructions": evaluation_row["revision_instructions"],
+                },
+            }
+        ).execute()
+        return
 
     if passed or at_cap or ungroundable or result["overall_status"] == "reject":
         db.table("article_drafts").update({"status": DraftStatus.EVALUATED.value}).eq("id", draft_id).execute()

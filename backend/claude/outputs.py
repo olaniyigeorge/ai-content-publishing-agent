@@ -146,8 +146,24 @@ SOURCE_SELECTION_SCHEMA = {
                         "wall', 'only navigation and footer boilerplate, no article body', 'JS-rendered shell with no "
                         "text in the raw HTML'). Never a generic statement like 'not useful'.",
                     },
+                    "confidence": {
+                        "type": "string",
+                        "enum": ["strong", "thin"],
+                        "description": "Only meaningful when usable is true. 'strong' = clearly authoritative or "
+                        "verifiable (primary data, a named study, an official source). 'thin' = real, usable "
+                        "evidence that's still weak — a single low-authority blog/opinion piece, outdated "
+                        "information, an indirect or unverified claim, or a source only tangentially about the "
+                        "topic. Do not mark a source unusable just because it's thin — thin evidence should still "
+                        "be cited, honestly labeled, not hidden or dressed up as solid.",
+                    },
+                    "confidence_reason": {
+                        "type": "string",
+                        "description": "Required when confidence is 'thin': the specific reason it's weak (e.g. "
+                        "'single personal blog post, no data or citations', 'article is from 2019, likely outdated "
+                        "for this topic', 'source only mentions this in passing'). Never a generic statement.",
+                    },
                 },
-                "required": ["source_id", "excerpt_selected", "relevance_notes", "usable"],
+                "required": ["source_id", "excerpt_selected", "relevance_notes", "usable", "confidence"],
             },
         }
     },

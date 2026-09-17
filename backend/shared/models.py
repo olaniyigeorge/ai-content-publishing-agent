@@ -21,6 +21,7 @@ from shared.enums import (
     QueueStatus,
     RequestStatus,
     ReviewDecision,
+    SourceConfidence,
     SourceRetrievalMethod,
     SourceStatus,
     StageEventStatus,
@@ -55,6 +56,7 @@ class ContentRequestOut(BaseModel):
     target_audience: str
     supporting_material: dict | None
     status: RequestStatus
+    gap_fill_attempts: int = 0
     submitted_by_user_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -74,6 +76,8 @@ class SourceOut(BaseModel):
     discard_reason: str | None
     retrieval_method: SourceRetrievalMethod
     status: SourceStatus
+    confidence: SourceConfidence = SourceConfidence.STRONG
+    confidence_reason: str | None = None
     retrieved_at: datetime | None
     created_at: datetime
 
@@ -110,6 +114,8 @@ class EvaluationOut(BaseModel):
     passed_threshold: bool
     feedback: str
     revision_instructions: str | None
+    unsupported_claims: list[str] = []
+    sections_to_revise: list[str] = []
     evaluated_by: EvaluatedBy
     created_at: datetime
 

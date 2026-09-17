@@ -8,6 +8,7 @@ from shared.enums import (
     JobType,
     PipelineStage,
     RequestStatus,
+    SourceConfidence,
     SourceRetrievalMethod,
     SourceStatus,
     StageEventStatus,
@@ -18,12 +19,67 @@ from worker.firecrawl import ScrapeFailure, SearchFailure, scrape_url, search_we
 SEARCH_RESULT_LIMIT = 3
 
 
+def _select_and_store_sources(
+    db,
+    *,
+    request_row: dict,
+    source_rows: list[dict],
+    research_focus: str | None = None,
+) -> int:
+    """Runs claude_service.select_sources over freshly-retrieved source rows
+    and writes the selected/discarded status, excerpt, and confidence back
+    onto each row. Shared by the initial research pass and a later gap-fill
+    pass so both mark thin evidence the same way instead of one path
+    trusting everything it finds. Returns the usable-source count."""
+    if not source_rows:
+        return 0
+
+    selection = claude_service.select_sources(
+        raw_idea=request_row["raw_idea"],
+        target_audience=request_row["target_audience"],
+        sources=source_rows,
+        research_focus=research_focus,
+    )
+    require_fields(selection, ["sources"], step="source selection", error_cls=ResearchFailure)
+    by_id = {s["source_id"]: s for s in selection["sources"] if "source_id" in s}
+
+    usable_count = 0
+    for row in source_rows:
+        picked = by_id.get(row["id"])
+        if not picked:
+            continue
+        if not picked.get("usable"):
+            db.table("sources").update(
+                {
+                    "status": SourceStatus.DISCARDED.value,
+                    "discard_reason": picked.get("unusable_reason") or "no usable article text",
+                }
+            ).eq("id", row["id"]).execute()
+            continue
+        usable_count += 1
+        confidence = picked.get("confidence") or SourceConfidence.STRONG.value
+        db.table("sources").update(
+            {
+                "excerpt_selected": picked.get("excerpt_selected"),
+                "relevance_notes": picked.get("relevance_notes"),
+                "status": SourceStatus.SELECTED.value,
+                "confidence": confidence,
+                "confidence_reason": picked.get("confidence_reason") if confidence == SourceConfidence.THIN.value else None,
+            }
+        ).eq("id", row["id"]).execute()
+    return usable_count
+
+
 def handle_research(job: dict) -> None:
     """EDGE_CASES.md #6: if every source fails to retrieve, this must be
     visible — the pipeline still proceeds (a raw_idea alone is a valid
     request per scenario 1) but stage_events records zero usable sources so
     a human/reviewer can see the gap, not just an article with no grounding.
     """
+    if job["payload"].get("gap_fill_for_draft_id"):
+        _handle_gap_fill_research(job)
+        return
+
     db = get_supabase()
     request_id = job["reference_id"]
     attachment_ids = job["payload"].get("attachment_ids", [])
@@ -105,35 +161,7 @@ def handle_research(job: dict) -> None:
                 .data[0]
             )
 
-    if source_rows:
-        selection = claude_service.select_sources(
-            raw_idea=request_row["raw_idea"],
-            target_audience=request_row["target_audience"],
-            sources=source_rows,
-        )
-        require_fields(selection, ["sources"], step="source selection", error_cls=ResearchFailure)
-        by_id = {s["source_id"]: s for s in selection["sources"] if "source_id" in s}
-        for row in source_rows:
-            picked = by_id.get(row["id"])
-            if not picked:
-                continue
-            if not picked.get("usable"):
-                db.table("sources").update(
-                    {
-                        "status": SourceStatus.DISCARDED.value,
-                        "discard_reason": picked.get("unusable_reason") or "no usable article text",
-                    }
-                ).eq("id", row["id"]).execute()
-                continue
-            db.table("sources").update(
-                {
-                    "excerpt_selected": picked.get("excerpt_selected"),
-                    "relevance_notes": picked.get("relevance_notes"),
-                    "status": SourceStatus.SELECTED.value,
-                }
-            ).eq("id", row["id"]).execute()
-
-    usable_count = sum(1 for r in source_rows if by_id.get(r["id"], {}).get("usable")) if source_rows else 0
+    usable_count = _select_and_store_sources(db, request_row=request_row, source_rows=source_rows)
 
     db.table("stage_events").insert(
         {
@@ -160,5 +188,84 @@ def handle_research(job: dict) -> None:
             "reference_type": JobReferenceType.CONTENT_REQUEST.value,
             "reference_id": request_id,
             "payload": {},
+        }
+    ).execute()
+
+
+def _handle_gap_fill_research(job: dict) -> None:
+    """Triggered by worker/handlers/evaluate.py when a draft with no
+    user-supplied source URL comes back with empty or thin grounding: one
+    more web search, this time aimed at what the evaluation actually
+    flagged (unsupported claims + feedback), instead of the blind
+    idea+audience query the initial pass used. Any usable results are
+    marked selected/thin exactly like the initial pass, then a `generate`
+    job re-runs against the same draft — worker/handlers/generate.py always
+    re-pulls every `selected` source for the request, so new sources found
+    here are picked up automatically without any extra wiring."""
+    db = get_supabase()
+    request_id = job["reference_id"]
+    payload = job["payload"]
+    draft_id = payload["gap_fill_for_draft_id"]
+    research_focus = payload.get("research_focus")
+
+    request_row = db.table("content_requests").select("*").eq("id", request_id).execute().data[0]
+    query = f"{request_row['raw_idea']} {request_row['target_audience']} {research_focus or ''}".strip()
+
+    failures = []
+    try:
+        results = search_web(query, limit=SEARCH_RESULT_LIMIT)
+    except SearchFailure as exc:
+        failures.append({"url": None, "error": str(exc)})
+        results = []
+
+    source_rows = [
+        db.table("sources")
+        .insert(
+            {
+                "content_request_id": request_id,
+                "intake_attachment_id": None,
+                "url": result["url"],
+                "title": result["title"],
+                "raw_content": result["raw_content"],
+                "retrieval_method": SourceRetrievalMethod.WEB_SEARCH.value,
+                "status": SourceStatus.RETRIEVED.value,
+                "retrieved_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        .execute()
+        .data[0]
+        for result in results
+    ]
+
+    usable_count = _select_and_store_sources(
+        db, request_row=request_row, source_rows=source_rows, research_focus=research_focus
+    )
+
+    db.table("stage_events").insert(
+        {
+            "content_request_id": request_id,
+            "stage": PipelineStage.RESEARCH.value,
+            "status": StageEventStatus.SUCCEEDED.value,
+            "detail": {
+                "draft_id": draft_id,
+                "gap_fill": True,
+                "research_focus": research_focus,
+                "sources_retrieved": len(source_rows),
+                "sources_usable": usable_count,
+                "failures": failures,
+            },
+        }
+    ).execute()
+
+    db.table("content_requests").update(
+        {"status": RequestStatus.REVISING.value, "updated_at": datetime.now(UTC).isoformat()}
+    ).eq("id", request_id).execute()
+
+    db.table("jobs").insert(
+        {
+            "job_type": JobType.GENERATE.value,
+            "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
+            "reference_id": draft_id,
+            "payload": {"revision_instructions": payload.get("revision_instructions")},
         }
     ).execute()
