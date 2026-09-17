@@ -5,6 +5,7 @@ only from here.
 
 from datetime import UTC, datetime
 
+from app.services.evaluation_context import with_evaluation_context
 from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
@@ -109,12 +110,19 @@ def submit_review(content_request_id: str, body: HumanReviewIn, reviewer_user_id
             raise InvalidStateTransition(
                 f"draft {draft['id']} already has a revision in progress — wait for it to finish first"
             )
+        # Same reasoning as draft_service.rewrite_draft: the reviewer's own
+        # notes are additive to the last evaluation's actual findings, not a
+        # replacement for them — otherwise a short note like "fix this"
+        # regenerates with no memory of what the evaluation already flagged.
+        instructions = with_evaluation_context(
+            body.notes or "Address the reviewer's feedback.", draft["id"], db=db
+        )
         db.table("jobs").insert(
             {
                 "job_type": JobType.GENERATE.value,
                 "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
                 "reference_id": draft["id"],
-                "payload": {"revision_instructions": body.notes or "Address the reviewer's feedback."},
+                "payload": {"revision_instructions": instructions},
             }
         ).execute()
         db.table("content_requests").update({"status": RequestStatus.REVISING.value, "updated_at": now}).eq(

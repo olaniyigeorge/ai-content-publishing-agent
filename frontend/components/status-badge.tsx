@@ -14,7 +14,9 @@ const DOT_COLORS: Record<string, string> = {
   ready_to_publish: "bg-sky-500",
   published: "bg-emerald-500",
   failed: "bg-red-500",
-  dead_letter: "bg-red-500",
+  // Amber, not red: a dead-lettered queue item is retryable with one click
+  // (see publishing-queue/page.tsx's Retry button), never a silent dead end.
+  dead_letter: "bg-amber-500",
   cancelled: "bg-neutral-300",
   started: "bg-blue-500",
   succeeded: "bg-emerald-500",
@@ -32,7 +34,7 @@ const TEXT_COLORS: Record<string, string> = {
   succeeded: "text-emerald-700",
   rejected: "text-red-700",
   failed: "text-red-700",
-  dead_letter: "text-red-700",
+  dead_letter: "text-amber-700",
   ready_to_publish: "text-sky-700",
   evaluating: "text-amber-700",
   revising: "text-amber-700",

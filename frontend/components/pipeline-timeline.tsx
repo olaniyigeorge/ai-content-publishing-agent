@@ -49,17 +49,22 @@ function StatusIcon({ stage, status }: { stage: string; status: "started" | "suc
     );
   }
   if (status === "failed") {
+    // Deliberately amber, not red: nothing in this pipeline is ever a
+    // silent dead end — a "failed" stage event always lands somewhere with
+    // a next action (human review, a manual retry, a rewrite), so it reads
+    // as "needs your attention" rather than "broken beyond repair."
     return (
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white ring-4 ring-[var(--background)]">
+      <span
+        className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white ring-4 ring-[var(--background)]"
+        title="Stopped automatically and handed to you to review — not a dead end"
+      >
         <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
-          <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M8 3v6M8 11.5v.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </span>
     );
   }
   if (status === "retrying") {
-    // Deliberately not red — this is a transient failure the worker is
-    // about to retry on its own, not a dead end that needs a human.
     return (
       <span
         className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-white ring-4 ring-[var(--background)]"
@@ -159,7 +164,7 @@ function cycleSummary(events: StageEventOut[]): { headline: string; latestStatus
     [...evaluations].reverse().find((e) => e.detail && "overall_status" in e.detail)?.detail?.overall_status;
   const atCap = evaluations.some((e) => e.error_message?.startsWith(REVISION_CAP_PREFIX));
   const headline = atCap
-    ? `${generations.length} draft attempts — revision cap reached, sent to human review`
+    ? `${generations.length} draft attempts completed. This didn't meet quality checks, so it's ready for your review.`
     : lastEvalResult === "pass"
       ? `${generations.length} draft attempt${generations.length === 1 ? "" : "s"} — passed evaluation`
       : lastEvalResult
@@ -221,7 +226,9 @@ function EventRow({
             </p>
           )
         ) : (
-          ev.error_message && <p className="mt-1 text-xs text-red-600">{ev.error_message}</p>
+          // Amber, not red — see StatusIcon: this stage stopped and handed
+          // off to you, it isn't an unrecoverable dead end.
+          ev.error_message && <p className="mt-1 text-xs text-amber-600">{ev.error_message}</p>
         )}
       </div>
     </div>

@@ -6,6 +6,7 @@ the human `revise_requested` path in review_service.py).
 
 from datetime import UTC, datetime
 
+from app.services.evaluation_context import with_evaluation_context
 from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
@@ -39,6 +40,14 @@ def rewrite_draft(draft_id: str, instructions: str | None) -> dict:
             "this draft already has a revision in progress — wait for it to finish before requesting another rewrite"
         )
 
+    # A human's rewrite instructions ("make it punchier") are additive, not a
+    # replacement for the reasoning the last evaluation already surfaced —
+    # without this, a vague instruction regenerates blind on nothing but
+    # that one line, dropping unsupported-claims/feedback context a prior
+    # evaluation cycle already spent finding.
+    full_instructions = with_evaluation_context(
+        instructions or "Rewrite and improve this draft.", draft_id, db=db
+    )
     job_row = (
         db.table("jobs")
         .insert(
@@ -46,7 +55,7 @@ def rewrite_draft(draft_id: str, instructions: str | None) -> dict:
                 "job_type": JobType.GENERATE.value,
                 "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
                 "reference_id": draft_id,
-                "payload": {"revision_instructions": instructions or "Rewrite and improve this draft."},
+                "payload": {"revision_instructions": full_instructions},
             }
         )
         .execute()

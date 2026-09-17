@@ -66,6 +66,34 @@ def test_rewrite_draft_enqueues_generate_job_and_marks_revising(fake_db):
     assert request["status"] == "revising"
 
 
+def test_rewrite_draft_carries_forward_the_last_evaluation_reasoning(fake_db):
+    """A human's rewrite instruction is additive to the prior evaluation's
+    actual findings, not a replacement for them — otherwise a short note
+    like "make it punchier" regenerates with no memory of what evaluation
+    already flagged as unsupported."""
+    _seed_draft(fake_db)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 2.4,
+            "passed_threshold": False,
+            "feedback": "leans too hard on one stat",
+            "revision_instructions": "cite a second source for the stat",
+            "unsupported_claims": ["the 40% figure has no source"],
+        }
+    ).execute()
+
+    rewrite_draft(DRAFT_ID, "make it punchier")
+
+    job = fake_db.table("jobs").select("*").execute().data[0]
+    instructions = job["payload"]["revision_instructions"]
+    assert instructions.startswith("make it punchier")
+    assert "leans too hard on one stat" in instructions
+    assert "40% figure has no source" in instructions
+    assert "cite a second source" in instructions
+
+
 def test_rewrite_draft_without_instructions_uses_default(fake_db):
     _seed_draft(fake_db)
     rewrite_draft(DRAFT_ID, None)

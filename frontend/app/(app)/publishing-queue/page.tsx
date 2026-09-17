@@ -203,7 +203,9 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
       )}
 
       {(q.last_error || q.failure_reason) && (
-        <p className="mt-2 text-sm text-red-600">{q.last_error ?? q.failure_reason}</p>
+        // Amber, not red: a queued item retries automatically, and even a
+        // dead-lettered one can be retried below — never a silent dead end.
+        <p className="mt-2 text-sm text-amber-600">{q.last_error ?? q.failure_reason}</p>
       )}
       {rowError && <p className="mt-2 text-sm text-red-600">{rowError}</p>}
 

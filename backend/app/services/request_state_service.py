@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from app.services.evaluation_context import with_evaluation_context
 from app.services.job_guard import has_pending_revision
 from app.services.review_service import REVIEWABLE_DRAFT_STATUSES
 from db.client import get_supabase
@@ -155,19 +156,23 @@ def _regenerate_drafts_using_discarded_source(
         return
 
     now = datetime.now(UTC).isoformat()
-    instructions = (
-        "A reviewer discarded one of the sources this draft relied on"
-        + (f" ({reason})" if reason else "")
-        + ". Regenerate without relying on it — if it was the only support for a claim, either "
-        "find support in another provided source, hedge the claim as unverified, or drop it "
-        "rather than restating it as fact."
-    )
     for draft in affected:
         # Same race this guards against elsewhere (TESTING_FINDINGS.md,
         # 2026-09-16): don't queue a second revision if one against this
         # draft is already in flight.
         if has_pending_revision(draft["id"]):
             continue
+
+        instructions = with_evaluation_context(
+            "A reviewer discarded one of the sources this draft relied on"
+            + (f" ({reason})" if reason else "")
+            + ". Regenerate without relying on it — if it was the only support for a claim, either "
+            "find support in another provided source, hedge the claim as unverified, or drop it "
+            "rather than restating it as fact.",
+            draft["id"],
+            db=db,
+        )
+
         db.table("jobs").insert(
             {
                 "job_type": JobType.GENERATE.value,

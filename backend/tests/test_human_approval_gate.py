@@ -68,3 +68,33 @@ def test_revise_requested_enqueues_generate_job_with_notes(fake_db):
     generate_jobs = [j for j in jobs if j["job_type"] == "generate"]
     assert len(generate_jobs) == 1
     assert generate_jobs[0]["payload"]["revision_instructions"] == "lead with the stat"
+
+
+def test_revise_requested_carries_forward_the_last_evaluation_reasoning(fake_db):
+    """The reviewer's notes are additive to the evaluation's own findings,
+    not a replacement — a short note shouldn't regenerate blind on nothing
+    but that one line."""
+    _seed_evaluated_draft(fake_db)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 2.9,
+            "passed_threshold": False,
+            "feedback": "tone is too formal for the audience",
+            "revision_instructions": "loosen up the intro",
+            "unsupported_claims": [],
+        }
+    ).execute()
+
+    submit_review(
+        REQUEST_ID,
+        HumanReviewIn(article_draft_id=DRAFT_ID, decision="revise_requested", notes="lead with the stat"),
+        reviewer_user_id="00000000-0000-0000-0000-000000000091",
+    )
+
+    generate_jobs = [j for j in fake_db.table("jobs").select("*").execute().data if j["job_type"] == "generate"]
+    instructions = generate_jobs[0]["payload"]["revision_instructions"]
+    assert instructions.startswith("lead with the stat")
+    assert "tone is too formal" in instructions
+    assert "loosen up the intro" in instructions

@@ -65,6 +65,32 @@ def test_discarding_a_source_the_reviewable_draft_used_triggers_regeneration(fak
     assert request["status"] == "revising"
 
 
+def test_discarding_a_source_carries_forward_the_last_evaluation_reasoning(fake_db):
+    _seed(fake_db)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 3.1,
+            "passed_threshold": False,
+            "feedback": "the market-size claim is the weakest part of this draft",
+            "revision_instructions": "either back the market-size number or drop it",
+            "unsupported_claims": ["the $4B market-size figure"],
+        }
+    ).execute()
+
+    request_state_service.override_source_status(
+        REQUEST_ID, SOURCE_ID, SourceOverrideIn(status="discarded", reason="not trustworthy enough")
+    )
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    instructions = jobs[0]["payload"]["revision_instructions"]
+    assert "not trustworthy enough" in instructions
+    assert "market-size claim is the weakest part" in instructions
+    assert "$4B market-size figure" in instructions
+    assert "back the market-size number or drop it" in instructions
+
+
 def test_discarding_a_source_not_used_by_any_draft_does_not_enqueue_anything(fake_db):
     _seed(fake_db, source_ids_used=["00000000-0000-0000-0000-000000000099"])
 

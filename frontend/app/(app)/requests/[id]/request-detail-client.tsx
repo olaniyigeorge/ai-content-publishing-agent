@@ -200,7 +200,7 @@ export function RequestDetailClient({ id }: { id: string }) {
     return (
       <div>
         <Link href="/" className="flex items-center gap-1 text-sm text-muted hover:text-foreground">
-          <ChevronLeft className="mt-[3px] h-3.5 w-3.5" />
+          <ChevronLeft className="mt-[2.5px] h-3.5 w-3.5" />
           <>back to requests</>
         </Link>
         <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-red-200 bg-red-50 py-12 text-center">
@@ -234,7 +234,7 @@ export function RequestDetailClient({ id }: { id: string }) {
     <div className="animate-fade-in-up space-y-6">
       <div>
        <Link href="/" className="flex items-center gap-1 text-sm text-muted hover:text-foreground">
-          <ChevronLeft className="mt-[3px] h-3.5 w-3.5" />
+          <ChevronLeft className="mt-[2.5px] h-3.5 w-3.5" />
           <>back to requests</>
         </Link>
         <div className="mt-2 flex items-start justify-between gap-4">
@@ -695,7 +695,9 @@ export function RequestDetailClient({ id }: { id: string }) {
                       </span>
                     </div>
                     {(q.last_error || q.failure_reason) && (
-                      <p className="mt-1 text-red-600">{q.last_error ?? q.failure_reason}</p>
+                      // Amber, not red — see publishing-queue/page.tsx: this
+                      // either retries automatically or is retryable by hand.
+                      <p className="mt-1 text-amber-600">{q.last_error ?? q.failure_reason}</p>
                     )}
                   </li>
                 ))}
