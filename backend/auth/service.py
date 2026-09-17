@@ -29,14 +29,25 @@ def _normalize_email(email: str) -> str:
 def _is_allowlisted(email: str) -> bool:
     db = get_supabase()
     domain = email.split("@")[-1]
-    rows = (
+    email_rows = (
         db.table("access_rules")
         .select("id")
         .eq("enabled", True)
-        .or_(f"and(type.eq.email,value.eq.{email}),and(type.eq.domain,value.eq.{domain})")
+        .eq("type", "email")
+        .eq("value", email)
         .execute()
         .data
     )
+    domain_rows = (
+        db.table("access_rules")
+        .select("id")
+        .eq("enabled", True)
+        .eq("type", "domain")
+        .eq("value", domain)
+        .execute()
+        .data
+    )
+    rows = email_rows + domain_rows
     if not rows:
         return False
     # expires_at filtering done in-app since PostgREST `or_` above can't

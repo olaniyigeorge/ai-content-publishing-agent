@@ -66,6 +66,32 @@ def test_verify_code_succeeds_once_then_consumed_code_cannot_be_reused(fake_db):
         auth_service.verify_code("a@koyatalent.com", "123456")
 
 
+def test_is_allowlisted_matches_email_and_domain_rules(fake_db):
+    fake_db.table("access_rules").insert(
+        {"type": "email", "value": "person@koyatalent.com", "enabled": True, "expires_at": None}
+    ).execute()
+    fake_db.table("access_rules").insert(
+        {"type": "domain", "value": "agency.com", "enabled": True, "expires_at": None}
+    ).execute()
+
+    assert auth_service._is_allowlisted("person@koyatalent.com") is True
+    assert auth_service._is_allowlisted("anyone@agency.com") is True
+    assert auth_service._is_allowlisted("nobody@evil.com") is False
+
+
+def test_is_allowlisted_is_not_vulnerable_to_filter_injection(fake_db):
+    """A crafted email containing PostgREST filter syntax (`,`/`(`/`)`) must
+    not widen the match to other rows — regression test for the injection
+    risk in DECISIONS.md, fixed by using two separate .eq() queries instead
+    of interpolating the email into an `.or_()` filter string."""
+    fake_db.table("access_rules").insert(
+        {"type": "email", "value": "victim@koyatalent.com", "enabled": True, "expires_at": None}
+    ).execute()
+
+    crafted = "x),and(type.eq.email,value.eq.victim@koyatalent.com"
+    assert auth_service._is_allowlisted(crafted) is False
+
+
 def test_expired_code_is_rejected(fake_db):
     from datetime import datetime, timedelta
 
