@@ -42,6 +42,22 @@ export interface MeResponse {
   last_login_at: string | null;
 }
 
+export type AccessRuleType = "email" | "domain";
+
+export interface AccessRuleIn {
+  type: AccessRuleType;
+  value: string;
+  enabled?: boolean;
+  expires_at?: string | null;
+}
+
+export interface AccessRuleOut extends AccessRuleIn {
+  id: string;
+  enabled: boolean;
+  expires_at: string | null;
+  created_at: string;
+}
+
 export interface IntakeAttachmentIn {
   type: AttachmentType;
   url?: string | null;

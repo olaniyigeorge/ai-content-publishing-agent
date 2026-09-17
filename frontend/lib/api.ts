@@ -1,4 +1,6 @@
 import type {
+  AccessRuleIn,
+  AccessRuleOut,
   ArticleDraftOut,
   ContentRequestCreate,
   ContentRequestDetail,
@@ -121,6 +123,17 @@ export const api = {
     }),
 
   getUsageSummary: () => request<UsageSummaryOut>("/api/usage/summary"),
+
+  listAccessRules: () => request<AccessRuleOut[]>("/auth/access-rules"),
+
+  createAccessRule: (body: AccessRuleIn) =>
+    request<AccessRuleOut>("/auth/access-rules", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  deleteAccessRule: (id: string) =>
+    request<{ message: string }>(`/auth/access-rules/${id}`, { method: "DELETE" }),
 
   overrideSourceStatus: (
     requestId: string,

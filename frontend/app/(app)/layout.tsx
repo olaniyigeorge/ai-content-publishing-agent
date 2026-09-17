@@ -10,6 +10,7 @@ const NAV = [
   { href: "/", label: "Requests" },
   { href: "/requests/new", label: "New request" },
   { href: "/publishing-queue", label: "Publishing queue" },
+  { href: "/admin/access", label: "Access" },
 ];
 
 export default function AppLayout({ children }: LayoutProps<"/">) {
