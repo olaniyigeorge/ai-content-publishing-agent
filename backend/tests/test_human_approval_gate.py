@@ -13,7 +13,14 @@ DRAFT_ID = "00000000-0000-0000-0000-000000000002"
 def _seed_evaluated_draft(fake_db, status="evaluated"):
     fake_db.table("content_requests").insert({"id": REQUEST_ID, "status": "in_review"}).execute()
     fake_db.table("article_drafts").insert(
-        {"id": DRAFT_ID, "content_request_id": REQUEST_ID, "status": status, "option_label": "A", "version": 1}
+        {
+            "id": DRAFT_ID,
+            "content_request_id": REQUEST_ID,
+            "status": status,
+            "option_label": "A",
+            "version": 1,
+            "source_ids_used": ["src-1"],
+        }
     ).execute()
 
 
@@ -68,6 +75,41 @@ def test_revise_requested_enqueues_generate_job_with_notes(fake_db):
     generate_jobs = [j for j in jobs if j["job_type"] == "generate"]
     assert len(generate_jobs) == 1
     assert generate_jobs[0]["payload"]["revision_instructions"] == "lead with the stat"
+
+
+def test_revise_requested_with_no_sources_and_no_source_url_queues_research(fake_db):
+    """Same gap-fill gate as draft_service.rewrite_draft (see
+    tests/test_rewrite.py) — 'revise requested' from a human reviewer is
+    just as unable to fix a sourceless draft by rewording it as an AI
+    rewrite is."""
+    fake_db.table("content_requests").insert(
+        {"id": REQUEST_ID, "status": "in_review", "raw_idea": "idea", "target_audience": "audience", "gap_fill_attempts": 0}
+    ).execute()
+    fake_db.table("article_drafts").insert(
+        {
+            "id": DRAFT_ID,
+            "content_request_id": REQUEST_ID,
+            "status": "evaluated",
+            "option_label": "A",
+            "version": 1,
+            "source_ids_used": [],
+        }
+    ).execute()
+
+    submit_review(
+        REQUEST_ID,
+        HumanReviewIn(article_draft_id=DRAFT_ID, decision="revise_requested", notes="find real sources for this"),
+        reviewer_user_id="00000000-0000-0000-0000-000000000091",
+    )
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert not any(j["job_type"] == "generate" for j in jobs)
+    research_jobs = [j for j in jobs if j["job_type"] == "research"]
+    assert len(research_jobs) == 1
+    assert research_jobs[0]["payload"]["gap_fill_for_draft_id"] == DRAFT_ID
+
+    request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
+    assert request["status"] == "researching"
 
 
 def test_revise_requested_carries_forward_the_last_evaluation_reasoning(fake_db):

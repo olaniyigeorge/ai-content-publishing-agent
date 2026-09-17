@@ -59,12 +59,15 @@ rule below must be an inline `style="..."` attribute, not a class or a
 <style> tag. Use a table-based layout (email-safe); do not use <div> flexbox/
 grid, which many clients ignore.
 
-KOYA EMAIL DESIGN SYSTEM:
+KOYA EMAIL DESIGN SYSTEM (mirrors the Koya dashboard's own tokens: a deep
+neutral surface with a single blue accent — #3B82F6 — used for the header,
+links, and calls to action, kept here on a light background since email
+clients render dark-mode unreliably):
 - Root: a single centered <table role="presentation" width="100%"
   cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;">
   containing one inner <table role="presentation" width="600"
   style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:12px;overflow:hidden;">.
-- Header band: a <tr><td style="background-color:#4338CA;padding:24px 32px;">
+- Header band: a <tr><td style="background-color:#3B82F6;padding:24px 32px;">
   with "Koya" in <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">.
 - Body cell: <td style="padding:32px;color:#1f2937;font-size:15px;line-height:1.6;">.
   - Intro paragraph: <p style="margin:0 0 20px;font-size:16px;color:#1f2937;">.
@@ -72,8 +75,8 @@ KOYA EMAIL DESIGN SYSTEM:
   - Body paragraphs: <p style="margin:0 0 16px;">.
   - Bullets: <ul style="margin:0 0 16px;padding-left:20px;"><li style="margin:0 0 8px;">.
   - Optional secondary item: wrap in <table role="presentation" width="100%"
-    style="background-color:#F5F3FF;border-radius:8px;margin:24px 0;"><tr><td style="padding:16px;">.
-  - Call-to-action button: <table role="presentation"><tr><td style="border-radius:6px;background-color:#4338CA;">
+    style="background-color:#EFF6FF;border-radius:8px;margin:24px 0;"><tr><td style="padding:16px;">.
+  - Call-to-action button: <table role="presentation"><tr><td style="border-radius:6px;background-color:#3B82F6;">
     <a href="#" style="display:inline-block;padding:12px 24px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">CTA TEXT</a></td></tr></table>
     (use a real link if the source article/sources supply one, otherwise "#").
   - Sign-off: <p style="margin:24px 0 0;color:#1f2937;">.

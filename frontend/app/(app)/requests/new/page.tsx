@@ -182,13 +182,13 @@ export default function NewRequestPage() {
                 const fieldError = touched[`sourceUrl-${i}`] ? sourceUrlErrors[i] : null;
                 return (
                   <div key={i}>
-                    <div className="flex gap-2">
+                    <div className="flex min-w-0 gap-2">
                       <input
                         type="url"
                         value={url}
                         onChange={(e) => updateSourceUrl(i, e.target.value)}
                         onBlur={() => setTouched((t) => ({ ...t, [`sourceUrl-${i}`]: true }))}
-                        className={inputClass(!!fieldError)}
+                        className={`min-w-0 ${inputClass(!!fieldError)}`}
                         placeholder="https://..."
                       />
                       {(sourceUrls.length > 1 || url) && (

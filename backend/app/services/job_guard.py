@@ -9,8 +9,20 @@ unchanged parent row, so the second one always loses to the
 target (the parent) ever changes, the worker's normal retry/backoff can't
 self-heal it; it just fails identically every attempt until dead-lettered.
 Rejecting the second enqueue attempt up front is the actual fix.
+
+EDGE_CASES.md #61, 2026-09-17: a `processing` row isn't reliably "still
+running" — if the worker process that claimed it died mid-handler (OOM,
+redeploy, SIGKILL) before marking it succeeded/failed, it's left at
+`processing` forever with nothing to revisit it if the worker itself never
+comes back. Without a staleness check, that one dead row permanently blocks
+every future rewrite of the draft it targeted, with no recourse. A `pending`
+row is always genuinely queued (even mid-backoff, it will run), so only
+`processing` gets the staleness check.
 """
 
+from datetime import UTC, datetime, timedelta
+
+from app.config import get_settings
 from db.client import get_supabase
 from shared.enums import JobReferenceType, JobStatus, JobType
 
@@ -21,7 +33,7 @@ def has_pending_revision(draft_id: str) -> bool:
     db = get_supabase()
     rows = (
         db.table("jobs")
-        .select("id")
+        .select("id, status, updated_at")
         .eq("job_type", JobType.GENERATE.value)
         .eq("reference_type", JobReferenceType.ARTICLE_DRAFT.value)
         .eq("reference_id", draft_id)
@@ -29,4 +41,14 @@ def has_pending_revision(draft_id: str) -> bool:
         .execute()
         .data
     )
-    return bool(rows)
+    if not rows:
+        return False
+
+    stale_cutoff = datetime.now(UTC) - timedelta(seconds=get_settings().job_stale_processing_seconds)
+    for row in rows:
+        if row["status"] == JobStatus.PENDING.value:
+            return True
+        updated_at = row.get("updated_at")
+        if not updated_at or datetime.fromisoformat(updated_at) > stale_cutoff:
+            return True
+    return False

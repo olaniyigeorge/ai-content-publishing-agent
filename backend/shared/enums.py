@@ -108,6 +108,10 @@ class JobType(StrEnum):
     EVALUATE = "evaluate"
     ADAPT = "adapt"
     PUBLISH = "publish"
+    GATHER_EVIDENCE = "gather_evidence"
+    """Evidence-driven regeneration: given a draft's specific unsupported
+    claims, search for and verify real sources before handing the generator
+    a verified evidence package — see worker/handlers/gather_evidence.py."""
 
 
 class JobReferenceType(StrEnum):
@@ -135,6 +139,8 @@ class PipelineStage(StrEnum):
     ADAPTATION = "adaptation"
     PUBLISHING_QUEUE = "publishing_queue"
     PUBLISHING = "publishing"
+    EVIDENCE_GATHERING = "evidence_gathering"
+    GROUNDING_VALIDATION = "grounding_validation"
 
 
 class StageEventStatus(StrEnum):
@@ -150,3 +156,27 @@ class StageEventStatus(StrEnum):
 class AccessRuleType(StrEnum):
     EMAIL = "email"
     DOMAIN = "domain"
+
+
+class ClaimType(StrEnum):
+    """Not a Postgres enum/column — this classifies entries inside the
+    evidence-driven regeneration payloads (jobs.payload's evidence_package /
+    claims_to_address), not a persisted row. See
+    worker/handlers/gather_evidence.py and claude/grounding_validator.py."""
+
+    SUPPORTED_FACT = "supported_fact"
+    """Directly backed by a verified, strong-confidence source excerpt."""
+    ATTRIBUTED_CLAIM = "attributed_claim"
+    """Backed by evidence, but the evidence itself is an opinion/attributed
+    statement (a named person or thin source said X) rather than a settled
+    fact — must stay attributed/hedged in the draft, not stated flatly."""
+    INFERENCE = "inference"
+    """No direct evidence found; acceptable only if rewritten as a clearly
+    hedged hypothesis rather than presented as fact."""
+    RECOMMENDATION = "recommendation"
+    """An actionable suggestion to the reader, not a factual assertion —
+    doesn't need source grounding the way a fact claim does."""
+    UNSUPPORTED = "unsupported"
+    """No evidence found and not (yet) rewritten as inference/hedged —
+    must receive evidence, become an inference, or be removed before the
+    draft is acceptable (see gather_evidence.py's claims_to_address)."""

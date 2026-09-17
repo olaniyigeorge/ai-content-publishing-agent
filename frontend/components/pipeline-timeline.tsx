@@ -34,7 +34,13 @@ const STAGE_ORB_STATE: Record<string, OrbState> = {
   publishing: "connecting",
 };
 
-const CYCLE_STAGES = new Set(["generation", "evaluation"]);
+// Grouped into one collapsible "Draft revisions" entry instead of each
+// attempt's generation/grounding-check/evaluation events spilling out as
+// separate top-level rows — a request that took a few automatic revisions
+// to ground properly used to read as a wall of raw violation text by
+// default, which is a lot to surface to someone who just wants a good
+// draft (2026-09-17 report). The detail is still there on expand.
+const CYCLE_STAGES = new Set(["generation", "grounding_validation", "evaluation"]);
 
 const REVISION_CAP_PREFIX = "revision cap (";
 
@@ -92,7 +98,10 @@ function StatusIcon({ stage, status }: { stage: string; status: "started" | "suc
 function summarizeDetail(stage: string, detail: Record<string, unknown> | null): string | null {
   if (!detail) return null;
   if (stage === "generation" && typeof detail.version === "number") {
-    return `option ${detail.option_label ?? "?"} · v${detail.version}`;
+    const base = `option ${detail.option_label ?? "?"} · v${detail.version}`;
+    return typeof detail.source_version === "number"
+      ? `${base} (regenerated from v${detail.source_version})`
+      : base;
   }
   if (stage === "evaluation" && "overall_status" in detail) {
     return `result: ${detail.overall_status}`;

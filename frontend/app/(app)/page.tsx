@@ -24,7 +24,7 @@ export default function RequestsPage() {
 
   return (
     <div className="animate-fade-in-up">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Content requests</h1>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
@@ -41,7 +41,7 @@ export default function RequestsPage() {
         </div>
         <Link
           href="/requests/new"
-          className="glow-primary rounded-md bg-primary px-4 py-2 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 active:translate-y-0"
+          className="glow-primary shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 active:translate-y-0 sm:px-4 sm:py-2 sm:text-sm"
         >
           New request
         </Link>
@@ -62,12 +62,12 @@ export default function RequestsPage() {
 
       {requests && requests.length > 0 && (
         <div className="glow-card mt-6 overflow-hidden rounded-xl border border-surface-border bg-surface-card">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-sm">
             <thead className="border-b border-surface-border bg-surface-base text-left text-muted">
               <tr>
-                <th className="px-4 py-2.5 font-medium">ID</th>
                 <th className="px-4 py-2.5 font-medium">Idea</th>
-                <th className="px-4 py-2.5 font-medium">Audience</th>
+                <th className="hidden px-4 py-2.5 font-medium sm:table-cell">Audience</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5 font-medium">Updated</th>
               </tr>
@@ -86,24 +86,16 @@ export default function RequestsPage() {
                     style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
                   >
                     <td className="px-4 py-3">
-                      <span
-                        className="font-mono text-xs text-muted/70"
-                        title={r.id}
-                      >
-                        {r.id.slice(0, 8)}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3">
                       <Link
                         href={`/requests/${r.id}`}
-                        className="font-medium text-foreground hover:text-primary hover:underline"
+                        title={displayIdea}
+                        className="block max-w-[220px] truncate font-medium text-foreground hover:text-primary hover:underline sm:max-w-xs"
                       >
                         {displayIdea}
                       </Link>
                     </td>
 
-                    <td className="px-4 py-3 text-muted">
+                    <td className="hidden px-4 py-3 text-muted sm:table-cell">
                       {r.target_audience}
                     </td>
 
@@ -125,6 +117,7 @@ export default function RequestsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -56,6 +56,10 @@ class DraftEvaluationFailed(DomainError):
     status_code = 502
 
 
+class EvidenceGatheringFailed(DomainError):
+    status_code = 502
+
+
 class AdaptationFailed(DomainError):
     status_code = 502
 

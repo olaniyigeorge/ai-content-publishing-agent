@@ -6,7 +6,9 @@ the human `revise_requested` path in review_service.py).
 
 from datetime import UTC, datetime
 
+from app.services.draft_versioning import insert_draft_version
 from app.services.evaluation_context import with_evaluation_context
+from app.services.gap_fill_gate import maybe_queue_gap_fill_research
 from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
@@ -48,6 +50,18 @@ def rewrite_draft(draft_id: str, instructions: str | None) -> dict:
     full_instructions = with_evaluation_context(
         instructions or "Rewrite and improve this draft.", draft_id, db=db
     )
+
+    request_row = db.table("content_requests").select("*").eq("id", draft["content_request_id"]).execute().data[0]
+    gap_fill_job = maybe_queue_gap_fill_research(
+        draft=draft, request_row=request_row, revision_instructions=full_instructions, db=db
+    )
+    if gap_fill_job:
+        # This draft has no real source material — rewriting the wording
+        # can't fix that, so search for real sources first (worker/handlers/
+        # research.py's gap-fill path) and let it re-queue `generate` itself
+        # once it has something to ground the rewrite in.
+        return {"job_id": gap_fill_job["id"], "status": "researching"}
+
     job_row = (
         db.table("jobs")
         .insert(
@@ -95,23 +109,18 @@ def manual_edit_draft(draft_id: str, title: str | None, body_markdown: str) -> d
             "awaiting a decision can be manually edited"
         )
 
-    new_draft = (
-        db.table("article_drafts")
-        .insert(
-            {
-                "content_request_id": parent["content_request_id"],
-                "content_plan_id": parent["content_plan_id"],
-                "option_label": parent["option_label"],
-                "version": parent["version"] + 1,
-                "parent_draft_id": parent["id"],
-                "title": (title or "").strip() or parent["title"],
-                "body_markdown": body,
-                "source_ids_used": parent["source_ids_used"],
-                "status": DraftStatus.EVALUATED.value,
-            }
-        )
-        .execute()
-        .data[0]
+    new_draft = insert_draft_version(
+        db,
+        {
+            "content_request_id": parent["content_request_id"],
+            "content_plan_id": parent["content_plan_id"],
+            "option_label": parent["option_label"],
+            "parent_draft_id": parent["id"],
+            "title": (title or "").strip() or parent["title"],
+            "body_markdown": body,
+            "source_ids_used": parent["source_ids_used"],
+            "status": DraftStatus.EVALUATED.value,
+        },
     )
     db.table("article_drafts").update({"status": DraftStatus.DISCARDED.value}).eq("id", parent["id"]).execute()
 
@@ -136,6 +145,7 @@ def manual_edit_draft(draft_id: str, title: str | None, body_markdown: str) -> d
                 "draft_id": new_draft["id"],
                 "version": new_draft["version"],
                 "option_label": new_draft["option_label"],
+                "source_version": parent["version"],
                 "edited_by": "human",
             },
         }

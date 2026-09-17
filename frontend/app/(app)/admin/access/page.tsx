@@ -137,20 +137,20 @@ export default function AccessRulesPage() {
 
       <form
         onSubmit={handleSubmit}
-        className="glow-card mt-6 flex flex-wrap items-end gap-3 rounded-xl border border-surface-border bg-surface-card p-4"
+        className="glow-card mt-6 flex flex-col gap-3 rounded-xl border border-surface-border bg-surface-card p-4 sm:flex-row sm:flex-wrap sm:items-end"
       >
-        <label className="flex flex-col gap-1 text-sm text-muted">
+        <label className="flex flex-col gap-1 text-sm text-muted sm:w-auto">
           Type
           <select
             value={type}
             onChange={(e) => setType(e.target.value as AccessRuleType)}
-            className="rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+            className="w-full rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none sm:w-auto"
           >
             <option value="email">Email</option>
             <option value="domain">Domain</option>
           </select>
         </label>
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm text-muted">
+        <label className="flex min-w-0 flex-col gap-1 text-sm text-muted sm:flex-1">
           {type === "email" ? "Email address" : "Domain"}
           <input
             type="text"
@@ -160,20 +160,20 @@ export default function AccessRulesPage() {
             className="w-full rounded-md border border-surface-border bg-surface-card px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
           />
         </label>
-        <label className="flex flex-col gap-1 text-sm text-muted">
+        <label className="flex flex-col gap-1 text-sm text-muted sm:w-auto">
           Expires (optional)
           <input
             type="datetime-local"
             min={nowForDatetimeLocal()}
             value={expiresAt}
             onChange={(e) => setExpiresAt(e.target.value)}
-            className="rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+            className="w-full rounded-md border border-surface-border bg-surface-card px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none sm:w-auto"
           />
         </label>
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:opacity-50"
+          className="w-full rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:opacity-50 sm:w-auto"
         >
           {submitting ? "Adding…" : "Grant access"}
         </button>

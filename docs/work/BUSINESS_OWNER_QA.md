@@ -4,6 +4,27 @@
 
 ---
 
+## 0. What changes for the business if this works — expected results
+
+Framed as an agency owner would actually measure it, not as a feature list.
+
+**Before:** one content manager brainstorms, researches, drafts an SEO article by hand, manually rewrites it three ways for LinkedIn/X/newsletter, self-reviews, then publishes. Quality and tone depend on whoever wrote it that day, and doing this for a second or third client multiplies the manual hours linearly — there is no shared leverage between clients.
+
+**After, if this system is trusted for real use:**
+- **Time-to-first-draft** drops from "a writing session" to "one submission + a wait for research/generation" (minutes, not hours) — the honest claim is *first-draft speed*, not *zero-touch content*. A human still has to read and approve every piece before it goes anywhere.
+- **Consistency of process, not necessarily of voice** — every request goes through the same research → plan → generate → evaluate → revise → adapt → approve pipeline, so quality no longer depends on which team member happened to write it. What the pipeline does *not* guarantee is brand voice fidelity beyond "match the brand" in the prompt — see Q4 below.
+- **The bottleneck moves from writing to reviewing.** This is the real ROI question (Q6): if review takes as long as writing did, this hasn't saved time, it's moved the work. The honest measure of success is *review time per approved piece*, not *pipeline run count*.
+- **Cost per piece is now visible and boundable** (Q4) — a founder can see, per request, exactly what was spent in Claude calls, instead of an invisible "writer's hourly rate" cost.
+
+**What "success" should look like in a demo or a pilot, concretely:**
+- A content manager can go from idea to three approved, channel-correct, source-grounded pieces without writing prose themselves — only reviewing/editing.
+- No piece reaches "approved" with an unsupported claim, a broken channel format, or a hidden failure.
+- Cost per request stays in the cents-to-low-dollars range shown in `TESTING_FINDINGS.md` (this build's real numbers: $0.03–$0.25 per request depending on revision cycles), not an open-ended bill.
+
+**What this system is explicitly not (say this before they ask, not after):** it is not a fully autonomous publisher. It does not currently post to real LinkedIn/X/newsletter platforms (Q9) — v1's "publish" is an internal queue. And it doesn't replace judgment about *whether an idea is worth writing about* — it will happily produce a competent-looking article from a vague idea (Q10) if a human doesn't apply that judgment at intake.
+
+---
+
 ## 1. "Will this ever publish something wrong, embarrassing, or false under our name?"
 
 This is the question underneath every other question. The honest answer has to be layered, not a flat "no":

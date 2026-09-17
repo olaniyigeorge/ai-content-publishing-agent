@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronDown, ChevronUp, Copy, Info, Mail, Share2 } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Info, Mail, Share2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { HtmlContentPreview } from "@/components/html-content-preview";
@@ -215,7 +215,7 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
 
         {q.status === "queued" && (
           <>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <input
                 type="datetime-local"
                 min={nowForDatetimeLocal()}
@@ -252,13 +252,16 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
         {q.status === "ready_to_publish" && (
           <button
             onClick={() => run(() => api.setQueueItemStatus(q.id, "published"))}
-            className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110"
+            title="I posted this — mark Published"
+            aria-label="I posted this — mark Published"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-2 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 sm:px-3"
           >
-            I posted this — mark Published
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span className="hidden sm:inline">I posted this — mark Published</span>
           </button>
         )}
 
-        <label className="ml-auto flex items-center gap-2 text-sm text-muted">
+        <label className="flex items-center gap-2 text-sm text-muted sm:ml-auto">
           Mark as
           <select
             value={q.status}

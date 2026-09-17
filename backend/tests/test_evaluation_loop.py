@@ -49,7 +49,185 @@ def _fail_result():
     }
 
 
-def test_failing_evaluation_below_cap_enqueues_another_generate(fake_db, monkeypatch):
+def test_regression_vs_parent_is_detected_and_folded_into_next_revision(fake_db, monkeypatch):
+    """A revision that scores lower than the draft it replaced — despite
+    addressing that draft's feedback — must be visible (score_delta_from_
+    parent) and must be told, explicitly, to go restore whatever it dropped,
+    not just chase the newly flagged issues (2026-09-18 report: 'make sure
+    the wins of a draft are carried into the next draft without degrading')."""
+    _seed_draft(fake_db, version=1)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 4.0,
+            "passed_threshold": True,
+            "feedback": "strong, well-grounded draft",
+            "evaluated_by": "ai",
+        }
+    ).execute()
+
+    child_id = "00000000-0000-0000-0000-000000000012"
+    fake_db.table("article_drafts").insert(
+        {
+            "id": child_id,
+            "content_request_id": REQUEST_ID,
+            "option_label": "A",
+            "version": 2,
+            "parent_draft_id": DRAFT_ID,
+            "title": "Draft v2",
+            "body_markdown": _VALID_BODY,
+            "source_ids_used": ["s1"],
+            "status": "draft",
+        }
+    ).execute()
+
+    lower_result = {
+        "overall_status": "revise",
+        "rubric_scores": {},
+        "overall_score": 3.0,
+        "unsupported_claims": [],
+        "sections_to_revise": [],
+        "recommended_changes": ["tighten the intro"],
+        "feedback": "addressed the flagged issue but reads weaker overall",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: lower_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": child_id, "payload": {}})
+
+    evaluation = fake_db.table("evaluations").select("*").eq("article_draft_id", child_id).execute().data[0]
+    assert evaluation["score_delta_from_parent"] == pytest.approx(-1.0)
+    assert "[regression]" in evaluation["revision_instructions"]
+
+    generate_jobs = [j for j in fake_db.table("jobs").select("*").execute().data if j["job_type"] == "generate"]
+    assert len(generate_jobs) == 1
+    assert "[regression]" in generate_jobs[0]["payload"]["revision_instructions"]
+
+
+def test_a_would_be_pass_that_regresses_from_its_parent_is_forced_to_revise_again(fake_db, monkeypatch):
+    """The harder guarantee: a regression is now a hard non-pass, exactly
+    like a guard violation or an unresolved unsupported claim — not just a
+    warning badge shown after the fact. A draft the model itself calls
+    "pass," with no guard violations and no unsupported claims, must still
+    be sent back for another automatic revision (not to human review) if it
+    scored lower than the draft it replaced."""
+    _seed_draft(fake_db, version=1)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 4.5,
+            "passed_threshold": True,
+            "feedback": "excellent draft",
+            "evaluated_by": "ai",
+        }
+    ).execute()
+
+    child_id = "00000000-0000-0000-0000-000000000013"
+    fake_db.table("article_drafts").insert(
+        {
+            "id": child_id,
+            "content_request_id": REQUEST_ID,
+            "option_label": "A",
+            "version": 2,
+            "parent_draft_id": DRAFT_ID,
+            "title": "Draft v2",
+            "body_markdown": _VALID_BODY,
+            "source_ids_used": ["s1"],
+            "status": "draft",
+        }
+    ).execute()
+
+    would_be_pass_result = {
+        "overall_status": "pass",
+        "rubric_scores": {},
+        "overall_score": 3.5,
+        "unsupported_claims": [],
+        "sections_to_revise": [],
+        "recommended_changes": [],
+        "feedback": "clean, well-structured draft",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: would_be_pass_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": child_id, "payload": {}})
+
+    evaluation = fake_db.table("evaluations").select("*").eq("article_draft_id", child_id).execute().data[0]
+    assert evaluation["passed_threshold"] is False  # forced non-pass despite the model saying "pass"
+    assert evaluation["score_delta_from_parent"] == pytest.approx(-1.0)
+    assert "[regression]" in evaluation["revision_instructions"]
+
+    draft = fake_db.table("article_drafts").select("*").eq("id", child_id).execute().data[0]
+    assert draft["status"] == "draft"  # not marked evaluated — never reached human review
+
+    request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
+    assert request["status"] == "revising"
+
+    generate_jobs = [j for j in fake_db.table("jobs").select("*").execute().data if j["job_type"] == "generate"]
+    assert len(generate_jobs) == 1
+    assert "[regression]" in generate_jobs[0]["payload"]["revision_instructions"]
+
+
+def test_regression_at_cap_still_stops_and_is_flagged(fake_db, monkeypatch):
+    """The auto-retry on regression is bounded by the same revision cap as
+    everything else — it must not loop forever chasing a regression that
+    never recovers. Once the cap is hit, it still goes to human review, with
+    an explicit stage_event calling out that it's regressed."""
+    settings = get_settings()
+    _seed_draft(fake_db, version=1)
+    fake_db.table("evaluations").insert(
+        {
+            "article_draft_id": DRAFT_ID,
+            "rubric_scores": {},
+            "overall_score": 4.5,
+            "passed_threshold": True,
+            "feedback": "excellent draft",
+            "evaluated_by": "ai",
+        }
+    ).execute()
+
+    child_id = "00000000-0000-0000-0000-000000000014"
+    fake_db.table("article_drafts").insert(
+        {
+            "id": child_id,
+            "content_request_id": REQUEST_ID,
+            "option_label": "A",
+            "version": settings.max_revisions,
+            "parent_draft_id": DRAFT_ID,
+            "title": "Draft at cap",
+            "body_markdown": _VALID_BODY,
+            "source_ids_used": ["s1"],
+            "status": "draft",
+        }
+    ).execute()
+
+    would_be_pass_result = {
+        "overall_status": "pass",
+        "rubric_scores": {},
+        "overall_score": 3.5,
+        "unsupported_claims": [],
+        "sections_to_revise": [],
+        "recommended_changes": [],
+        "feedback": "clean draft",
+    }
+    monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: would_be_pass_result)
+
+    evaluate_handler.handle_evaluate({"reference_id": child_id, "payload": {}})
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert not any(j["job_type"] == "generate" for j in jobs)  # cap reached, loop stopped
+
+    draft = fake_db.table("article_drafts").select("*").eq("id", child_id).execute().data[0]
+    assert draft["status"] == "evaluated"  # sent to human review despite still being a regression
+
+    events = fake_db.table("stage_events").select("*").eq("content_request_id", REQUEST_ID).execute().data
+    assert any("scored lower than its parent draft" in (e.get("error_message") or "") for e in events)
+
+
+def test_failing_evaluation_below_cap_with_unsupported_claims_routes_to_evidence_gathering(fake_db, monkeypatch):
+    """_fail_result() carries unsupported_claims — evidence-driven
+    regeneration routes those through gather_evidence first, not straight
+    back to generate (see tests/test_evidence_pipeline.py for the full
+    gather_evidence -> generate handoff)."""
     _seed_draft(fake_db, version=1)
     monkeypatch.setattr(evaluate_handler.claude_service, "evaluate_draft", lambda **kw: _fail_result())
 
@@ -57,7 +235,8 @@ def test_failing_evaluation_below_cap_enqueues_another_generate(fake_db, monkeyp
     evaluate_handler.handle_evaluate(job)
 
     jobs = fake_db.table("jobs").select("*").execute().data
-    assert any(j["job_type"] == "generate" for j in jobs)
+    assert any(j["job_type"] == "gather_evidence" for j in jobs)
+    assert not any(j["job_type"] == "generate" for j in jobs)
     draft = fake_db.table("article_drafts").select("*").eq("id", DRAFT_ID).execute().data[0]
     assert draft["status"] == "draft"  # not yet marked evaluated — still cycling
 
@@ -226,7 +405,11 @@ def test_low_source_grounding_with_real_sources_still_revises_normally(fake_db, 
     evaluate_handler.handle_evaluate({"reference_id": DRAFT_ID, "payload": {}})
 
     jobs = fake_db.table("jobs").select("*").execute().data
-    assert any(j["job_type"] == "generate" for j in jobs)  # normal revision loop, not short-circuited
+    # normal revision loop, not short-circuited into gap-fill research — but
+    # it does carry a specific unsupported claim, so it's evidence-driven
+    # (gather_evidence), not a bare reword.
+    assert not any(j["job_type"] == "research" for j in jobs)
+    assert any(j["job_type"] == "gather_evidence" for j in jobs)
 
 
 def test_thin_only_sources_with_no_source_url_trigger_gap_fill(fake_db, monkeypatch):
@@ -303,7 +486,9 @@ def test_model_claimed_pass_is_overridden_by_unsupported_claims(fake_db, monkeyp
     assert evaluations[0]["passed_threshold"] is False
     assert "[unsupported claim]" in evaluations[0]["revision_instructions"]
     jobs = fake_db.table("jobs").select("*").execute().data
-    assert any(j["job_type"] == "generate" for j in jobs)  # sent back for revision, not approved as-is
+    # sent back for revision, not approved as-is — via evidence-gathering
+    # since there's a specific unsupported claim to research.
+    assert any(j["job_type"] == "gather_evidence" for j in jobs)
 
 
 def test_evaluation_missing_overall_score_raises_clear_error(fake_db, monkeypatch):

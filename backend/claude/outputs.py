@@ -169,3 +169,27 @@ SOURCE_SELECTION_SCHEMA = {
     },
     "required": ["sources"],
 }
+
+# evidence-driven regeneration (worker/handlers/gather_evidence.py): given one
+# specific claim and one candidate source's raw retrieved content, decide
+# whether that source actually supports the claim — never whether a URL
+# merely exists. `excerpt` is checked against the source's real content by
+# claude/grounding_validator.py's caller before it's trusted; this schema
+# only constrains the model's *response* shape, not whether it told the
+# truth about the excerpt being verbatim.
+CLAIM_VERIFICATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "supports_claim": {
+            "type": "boolean",
+            "description": "True only if this source directly backs the claim — not just related to the topic.",
+        },
+        "excerpt": {
+            "type": "string",
+            "description": "A short passage copied verbatim from the source content that supports the claim. "
+            "Empty string if supports_claim is false. Never paraphrase — copy exactly.",
+        },
+        "reason": {"type": "string"},
+    },
+    "required": ["supports_claim", "excerpt", "reason"],
+}

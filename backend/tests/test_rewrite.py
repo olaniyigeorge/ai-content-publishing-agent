@@ -26,7 +26,7 @@ def _seed_draft(fake_db):
             "body_markdown": "# Draft\n\nBody.",
             "version": 1,
             "option_label": "A",
-            "source_ids_used": [],
+            "source_ids_used": ["src-1"],
             "status": "evaluated",
         }
     ).execute()
@@ -64,6 +64,52 @@ def test_rewrite_draft_enqueues_generate_job_and_marks_revising(fake_db):
 
     request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
     assert request["status"] == "revising"
+
+
+def test_rewrite_draft_with_no_sources_and_no_source_url_queues_research_instead_of_generate(fake_db):
+    """A rewrite request against a draft with zero source material can't be
+    fixed by regenerating text — there's nothing to ground it in, so the
+    model either invents plausible-looking citations or hedges everything
+    into mush, and the request never actually gets what it needs: real
+    sources. Mirrors worker/handlers/evaluate.py's automatic gap-fill check
+    (TESTING_FINDINGS.md, 2026-09-17)."""
+    fake_db.table("content_requests").insert(
+        {
+            "id": REQUEST_ID,
+            "status": "queued",
+            "raw_idea": "Why database indexing matters",
+            "target_audience": "junior engineers",
+            "gap_fill_attempts": 0,
+        }
+    ).execute()
+    fake_db.table("article_drafts").insert(
+        {
+            "id": DRAFT_ID,
+            "content_request_id": REQUEST_ID,
+            "title": "Draft",
+            "body_markdown": "# Draft\n\nBody.",
+            "version": 1,
+            "option_label": "A",
+            "source_ids_used": [],
+            "status": "evaluated",
+        }
+    ).execute()
+
+    out = rewrite_draft(DRAFT_ID, "research some real sources and make this factually grounded")
+
+    jobs = fake_db.table("jobs").select("*").execute().data
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["job_type"] == "research"
+    assert job["reference_type"] == "content_request"
+    assert job["reference_id"] == REQUEST_ID
+    assert job["payload"]["gap_fill_for_draft_id"] == DRAFT_ID
+    assert out["job_id"] == job["id"]
+    assert out["status"] == "researching"
+
+    request = fake_db.table("content_requests").select("*").eq("id", REQUEST_ID).execute().data[0]
+    assert request["status"] == "researching"
+    assert request["gap_fill_attempts"] == 1
 
 
 def test_rewrite_draft_carries_forward_the_last_evaluation_reasoning(fake_db):

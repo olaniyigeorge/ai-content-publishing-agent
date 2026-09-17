@@ -61,13 +61,16 @@ export function RequestDetailClient({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [reviewingDraftId, setReviewingDraftId] = useState<string | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [reviewSubmittingId, setReviewSubmittingId] = useState<string | null>(null);
   const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null);
   const [rewritingId, setRewritingId] = useState<string | null>(null);
   const [rewriteInstructions, setRewriteInstructions] = useState("");
   const [rewritePending, setRewritePending] = useState<string | null>(null);
   const [awaitingRewrite, setAwaitingRewrite] = useState<AwaitingRewrite | null>(null);
   const [expandedChannelHistory, setExpandedChannelHistory] = useState<string | null>(null);
-  const [collapsedDraftIds, setCollapsedDraftIds] = useState<Set<string>>(new Set());
+  // Drafts render collapsed by default (title/version/score only) — a draft
+  // only stays expanded once the user opens it here.
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [showIntakeContext, setShowIntakeContext] = useState(false);
   const [showQueueHelp, setShowQueueHelp] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
@@ -78,8 +81,8 @@ export function RequestDetailClient({ id }: { id: string }) {
   const [editError, setEditError] = useState<string | null>(null);
   const [sourceOverridePending, setSourceOverridePending] = useState<string | null>(null);
 
-  function toggleDraftCollapsed(draftId: string) {
-    setCollapsedDraftIds((prev) => {
+  function toggleDraftExpanded(draftId: string) {
+    setExpandedCardIds((prev) => {
       const next = new Set(prev);
       if (next.has(draftId)) next.delete(draftId);
       else next.add(draftId);
@@ -115,6 +118,7 @@ export function RequestDetailClient({ id }: { id: string }) {
 
   async function handleReview(draftId: string, decision: ReviewDecision) {
     setError(null);
+    setReviewSubmittingId(draftId);
     try {
       await api.submitReview(id, draftId, decision, reviewNotes.trim() || undefined);
       setReviewingDraftId(null);
@@ -122,6 +126,8 @@ export function RequestDetailClient({ id }: { id: string }) {
       load();
     } catch (err) {
       setError(friendlyError(err, "failed to submit review"));
+    } finally {
+      setReviewSubmittingId(null);
     }
   }
 
@@ -237,9 +243,11 @@ export function RequestDetailClient({ id }: { id: string }) {
           <ChevronLeft className="mt-[2.5px] h-3.5 w-3.5" />
           <>back to requests</>
         </Link>
-        <div className="mt-2 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">{request.raw_idea?.trim() || "(source URL only)"}</h1>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="line-clamp-2 text-lg font-semibold text-foreground">
+              {request.raw_idea?.trim() || "(source URL only)"}
+            </h1>
             <p className="mt-1 text-sm text-muted">
               Audience: {request.target_audience}
               <span className="ml-2 font-mono text-xs text-muted/50" title={request.id}>
@@ -297,7 +305,9 @@ export function RequestDetailClient({ id }: { id: string }) {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {!pipelineJustStarted && <PipelinePhaseStepper status={request.status} onSelect={scrollToPipelineActivity} />}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         {pipelineJustStarted ? (
           <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-surface-border bg-surface-card py-24 text-center">
             <ThinkingOrb state={STARTED_ORB_STATE[request.status] ?? "working"} size={64} aria-label="Working" />
@@ -316,6 +326,9 @@ export function RequestDetailClient({ id }: { id: string }) {
             ) : (
               <div className="space-y-4">
                 {drafts.map((d) => {
+                  const sourceVersion = d.parent_draft_id
+                    ? drafts.find((sd) => sd.id === d.parent_draft_id)?.version
+                    : undefined;
                   const evaluation = evaluationsByDraft.get(d.id);
                   const draftReviews = reviewsByDraft.get(d.id) ?? [];
                   const hasTerminalReview = draftReviews.some(
@@ -323,23 +336,29 @@ export function RequestDetailClient({ id }: { id: string }) {
                   );
                   const isReviewable = REVIEWABLE_DRAFT_STATUSES.has(d.status) && !hasTerminalReview;
                   const expanded = expandedDraftId === d.id;
-                  const cardCollapsed = collapsedDraftIds.has(d.id);
+                  const cardCollapsed = !expandedCardIds.has(d.id);
                   const isBeingRewritten =
                     awaitingRewrite?.kind === "draft" &&
                     awaitingRewrite.id === d.id &&
                     d.status !== "discarded" &&
                     Date.now() - awaitingRewrite.startedAt < REWRITE_TIMEOUT_MS;
                   const isEditing = editingDraftId === d.id;
+                  // Let one action finish before starting the next: while an
+                  // AI rewrite is actually in flight for this draft, or a
+                  // review decision is being submitted, block the other
+                  // actions instead of letting a click race the backend's
+                  // own in-flight-revision guard (app/services/job_guard.py).
+                  const draftBusy = isBeingRewritten || reviewSubmittingId === d.id;
                   const thinSourceCount = d.source_ids_used.filter(
                     (sid) => sources.find((s) => s.id === sid)?.confidence === "thin"
                   ).length;
 
                   return (
                     <div key={d.id} className="glow-card rounded-xl border border-surface-border bg-surface-card p-4 transition-shadow duration-200">
-                      <div className="flex items-start justify-between gap-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
                         <button
                           type="button"
-                          onClick={() => toggleDraftCollapsed(d.id)}
+                          onClick={() => toggleDraftExpanded(d.id)}
                           className="flex min-w-0 flex-1 items-start gap-2 text-left"
                         >
                           <span className="mt-0.5 shrink-0 text-muted">
@@ -347,11 +366,17 @@ export function RequestDetailClient({ id }: { id: string }) {
                           </span>
                           <span className="min-w-0 font-medium text-foreground">
                             <span className="block truncate">{d.title}</span>
-                            <VersionPill optionLabel={d.option_label} version={d.version} />
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <VersionPill version={d.version} />
+                              {sourceVersion != null && (
+                                <span className="text-[11px] text-muted">regenerated from v{sourceVersion}</span>
+                              )}
+                            </span>
                           </span>
                         </button>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                           {isBeingRewritten && <RewritingIndicator />}
+                          {evaluation && <ScoreChip score={evaluation.overall_score} passed={evaluation.passed_threshold} />}
                           {thinSourceCount > 0 && (
                             <span
                               className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700"
@@ -375,6 +400,7 @@ export function RequestDetailClient({ id }: { id: string }) {
 
                       {!cardCollapsed && (
                         <>
+                          {d.revision_instructions && <InstructionsGiven instructions={d.revision_instructions} />}
                           {evaluation && <EvaluationSummary evaluation={evaluation} />}
 
                           {isEditing ? (
@@ -399,18 +425,20 @@ export function RequestDetailClient({ id }: { id: string }) {
                                 <CopyButton text={d.body_markdown} />
                                 <IconButton
                                   icon={Sparkles}
-                                  label="Rewrite with AI"
+                                  label={isBeingRewritten ? "Rewrite in progress…" : "Rewrite with AI"}
                                   onClick={() => {
                                     setRewritingId(rewritingId === d.id ? null : d.id);
                                     setRewriteInstructions("");
                                   }}
                                   active={rewritingId === d.id}
+                                  disabled={draftBusy}
                                 />
                                 {isReviewable && (
                                   <IconButton
                                     icon={PencilLine}
                                     label="Edit manually"
                                     onClick={() => startEditingDraft(d.id, d.title, d.body_markdown)}
+                                    disabled={draftBusy}
                                   />
                                 )}
                               </div>
@@ -453,27 +481,46 @@ export function RequestDetailClient({ id }: { id: string }) {
                                 onChange={(e) => setReviewNotes(e.target.value)}
                                 rows={2}
                                 placeholder="notes (required for revise, optional for approve/reject)"
-                                className="w-full rounded-md border border-surface-border bg-surface-card px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                                disabled={draftBusy}
+                                className="w-full rounded-md border border-surface-border bg-surface-card px-3 py-2 text-sm focus:border-primary focus:outline-none disabled:opacity-60"
                               />
+                              <p className="text-[11px] text-muted">
+                                &ldquo;Mark as selected option&rdquo; only records which draft you prefer — it
+                                doesn&apos;t rewrite anything. To have the AI act on your notes, use &ldquo;Request
+                                revision&rdquo; or the Rewrite with AI button above instead.
+                              </p>
                               <div className="flex flex-wrap gap-2">
-                                <ReviewButton label="Approve" onClick={() => handleReview(d.id, "approved")} variant="approve" />
-                                <ReviewButton label="Reject" onClick={() => handleReview(d.id, "rejected")} variant="reject" />
+                                <ReviewButton
+                                  label="Approve"
+                                  onClick={() => handleReview(d.id, "approved")}
+                                  variant="approve"
+                                  disabled={draftBusy}
+                                />
+                                <ReviewButton
+                                  label="Reject"
+                                  onClick={() => handleReview(d.id, "rejected")}
+                                  variant="reject"
+                                  disabled={draftBusy}
+                                />
                                 <ReviewButton
                                   label="Request revision"
                                   onClick={() => handleReview(d.id, "revise_requested")}
                                   variant="neutral"
+                                  disabled={draftBusy}
                                 />
                                 <ReviewButton
                                   label="Mark as selected option"
                                   onClick={() => handleReview(d.id, "option_selected")}
                                   variant="neutral"
+                                  disabled={draftBusy}
                                 />
                                 <button
                                   onClick={() => {
                                     setReviewingDraftId(null);
                                     setReviewNotes("");
                                   }}
-                                  className="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface-card-hover"
+                                  disabled={draftBusy}
+                                  className="rounded-md px-3 py-1.5 text-sm text-muted hover:bg-surface-card-hover disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   Cancel
                                 </button>
@@ -482,7 +529,9 @@ export function RequestDetailClient({ id }: { id: string }) {
                           ) : (
                             <button
                               onClick={() => setReviewingDraftId(d.id)}
-                              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110"
+                              disabled={draftBusy}
+                              title={isBeingRewritten ? "Wait for the current rewrite to finish first" : undefined}
+                              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-white transition-transform duration-150 hover:-translate-y-px hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
                             >
                               Review this option
                             </button>
@@ -577,15 +626,15 @@ export function RequestDetailClient({ id }: { id: string }) {
             {adaptations.length === 0 ? (
               <EmptyNote text="channel content is prepared after a draft is approved" />
             ) : (
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {groupAdaptationsByChannel(adaptations).map(({ latest, previous }) => {
                   const isBeingRewritten =
                     awaitingRewrite?.kind === "adaptation" &&
                     awaitingRewrite.beforeId === latest.id &&
                     Date.now() - awaitingRewrite.startedAt < REWRITE_TIMEOUT_MS;
                   return (
-                  <div key={latest.id} className="rounded-lg border border-surface-border bg-surface-card p-3">
-                    <div className="flex items-center justify-between">
+                  <div key={latest.id} className="min-w-0 rounded-lg border border-surface-border bg-surface-card p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-medium capitalize text-foreground">{latest.channel}</span>
                       <div className="flex items-center gap-2">
                         {isBeingRewritten && <RewritingIndicator />}
@@ -603,7 +652,11 @@ export function RequestDetailClient({ id }: { id: string }) {
                       </pre>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <CopyButton text={latest.content} />
+                      {latest.content_format === "html" ? (
+                        <CopyHtmlButton html={latest.content} />
+                      ) : (
+                        <CopyButton text={latest.content} />
+                      )}
                       <IconButton
                         icon={Sparkles}
                         label="Rewrite with AI"
@@ -714,19 +767,135 @@ export function RequestDetailClient({ id }: { id: string }) {
         </div>
         )}
 
-        <aside className="lg:sticky lg:top-6 lg:self-start space-y-6">
-          <Section title="Pipeline activity">
-            <div className="glow-card rounded-xl border border-surface-border bg-surface-card p-4">
-              <PipelineTimeline events={stage_events} humanReviews={human_reviews} drafts={drafts} />
-            </div>
-          </Section>
-
+        <aside className="xl:sticky xl:top-6 xl:self-start space-y-6">
           <Section title="API usage">
             <UsagePanel usage={usage} expanded={showUsage} onToggle={() => setShowUsage((v) => !v)} />
           </Section>
         </aside>
       </div>
+
+      <section id="pipeline-activity" className="scroll-mt-6">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Pipeline activity</h2>
+        <div className="glow-card mt-3 rounded-xl border border-surface-border bg-surface-card p-4">
+          <PipelineTimeline events={stage_events} humanReviews={human_reviews} drafts={drafts} />
+        </div>
+      </section>
     </div>
+  );
+}
+
+function scrollToPipelineActivity() {
+  document.getElementById("pipeline-activity")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+const PHASES: { key: string; label: string }[] = [
+  { key: "intake", label: "Intake" },
+  { key: "research", label: "Research" },
+  { key: "planning", label: "Planning" },
+  { key: "drafting", label: "Drafting" },
+  { key: "review", label: "Review" },
+  { key: "publishing", label: "Publishing" },
+];
+
+// Coarse phase index for each request.status — the full detail (every
+// retry, every grounding check) lives in the pipeline activity timeline
+// below; this is meant to be readable at a glance.
+const STATUS_PHASE_INDEX: Record<string, number> = {
+  intake: 0,
+  researching: 1,
+  planning: 2,
+  drafting: 3,
+  evaluating: 3,
+  revising: 3,
+  in_review: 4,
+  rejected: 4,
+  approved: 5,
+  adapting: 5,
+  queued: 5,
+  published: 5,
+  // "failed" can happen at several points; drafting is the most common one
+  // (an exhausted revision loop), so it's the best single-node approximation
+  // — the timeline below has the actual stage it failed at.
+  failed: 3,
+};
+
+type PhaseState = "done" | "active" | "pending" | "attention";
+
+/** A glanceable "where is this request right now" strip — circular nodes
+ * connected by a line, one per coarse pipeline phase. Every node is
+ * clickable and smooth-scrolls to the full stage-by-stage detail at the
+ * bottom of the page (id="pipeline-activity") rather than duplicating that
+ * detail up here. */
+function PipelinePhaseStepper({ status, onSelect }: { status: string; onSelect: () => void }) {
+  const currentIndex = STATUS_PHASE_INDEX[status] ?? 0;
+  const isTerminalIssue = status === "rejected" || status === "failed";
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-surface-border bg-surface-card p-4">
+      <ol className="flex min-w-max items-center">
+        {PHASES.map((phase, i) => {
+          let state: PhaseState;
+          if (isTerminalIssue && i === currentIndex) state = "attention";
+          else if (i < currentIndex || status === "published") state = "done";
+          else if (i === currentIndex) state = "active";
+          else state = "pending";
+
+          return (
+            <li key={phase.key} className="flex flex-1 items-center last:flex-none">
+              <button
+                type="button"
+                onClick={onSelect}
+                className="flex flex-col items-center gap-1.5 px-1 text-center"
+                title={`${phase.label} — jump to pipeline activity detail`}
+              >
+                <PhaseNode state={state} />
+                <span
+                  className={`whitespace-nowrap text-[11px] font-medium ${
+                    state === "pending" ? "text-muted" : "text-foreground"
+                  }`}
+                >
+                  {phase.label}
+                </span>
+              </button>
+              {i < PHASES.length - 1 && (
+                <div
+                  className={`mx-1 h-0.5 flex-1 rounded transition-colors duration-300 ${
+                    i < currentIndex || status === "published" ? "bg-emerald-500" : "bg-surface-border"
+                  }`}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function PhaseNode({ state }: { state: PhaseState }) {
+  if (state === "done") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white transition-transform duration-150 hover:scale-105">
+        <Check className="h-4 w-4" />
+      </span>
+    );
+  }
+  if (state === "attention") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white transition-transform duration-150 hover:scale-105">
+        <Info className="h-4 w-4" />
+      </span>
+    );
+  }
+  if (state === "active") {
+    return (
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-primary/10 text-primary transition-transform duration-150 hover:scale-105">
+        <ThinkingOrb state="working" size={20} aria-label="In progress" />
+      </span>
+    );
+  }
+  return (
+    <span className="h-8 w-8 shrink-0 rounded-full border-2 border-surface-border transition-transform duration-150 hover:scale-105" />
   );
 }
 
@@ -748,19 +917,22 @@ function IconButton({
   label,
   onClick,
   active,
+  disabled,
 }: {
   icon: typeof Copy;
   label: string;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       title={label}
       aria-label={label}
-      className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors duration-150 ${
+      className={`flex h-8 w-8 items-center justify-center rounded-md border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? "border-primary bg-primary/10 text-primary"
           : "border-surface-border text-muted hover:bg-surface-card-hover hover:text-foreground"
@@ -791,10 +963,73 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function VersionPill({ optionLabel, version }: { optionLabel: string; version: number }) {
+/** Copies HTML content so pasting into a rich-text target (Gmail's composer,
+ * Docs, Notion, etc.) renders the formatted email instead of dumping raw
+ * markup. `ClipboardItem` with a "text/html" entry is what makes that work —
+ * a plain `writeText` only ever puts a text/plain payload on the clipboard,
+ * which is why the raw-HTML-in-Gmail complaint happens with the generic
+ * copy button. Falls back to a plain-text copy (with a note) if the browser
+ * doesn't support multi-type clipboard writes (e.g. older Safari). */
+function CopyHtmlButton({ html }: { html: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "fallback">("idle");
+
   return (
-    <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-      option {optionLabel} · v{version}
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          if (typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                "text/html": new Blob([html], { type: "text/html" }),
+                "text/plain": new Blob([html], { type: "text/plain" }),
+              }),
+            ]);
+            setState("copied");
+          } else {
+            await navigator.clipboard.writeText(html);
+            setState("fallback");
+          }
+        } catch {
+          try {
+            await navigator.clipboard.writeText(html);
+            setState("fallback");
+          } catch {
+            // clipboard unavailable — silently ignore
+          }
+        }
+        setTimeout(() => setState("idle"), 2500);
+      }}
+      title="Copies the formatted email — paste directly into Gmail's compose window and it renders styled, not as raw HTML"
+      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors duration-150 ${
+        state === "copied"
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-surface-border text-muted hover:bg-surface-card-hover hover:text-foreground"
+      }`}
+    >
+      {state === "copied" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {state === "copied" ? "Copied for pasting" : state === "fallback" ? "Copied as text (paste may not render)" : "Copy for Gmail"}
+    </button>
+  );
+}
+
+function VersionPill({ version }: { version: number }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+      v{version}
+    </span>
+  );
+}
+
+function ScoreChip({ score, passed }: { score: number; passed: boolean }) {
+  return (
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+        passed ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-amber-300 bg-amber-50 text-amber-700"
+      }`}
+      title={`Evaluation score: ${score.toFixed(2)} / ${MAX_RUBRIC_SCORE}`}
+    >
+      {score.toFixed(1)}/{MAX_RUBRIC_SCORE}
     </span>
   );
 }
@@ -963,6 +1198,30 @@ function RewriteControl({
   );
 }
 
+/** Shows exactly what this version was told to do differently — a content
+ * manager's review notes / rewrite instructions, folded together with the
+ * prior evaluation's own feedback and unsupported-claims list (app/services/
+ * evaluation_context.py). This is the actual text the generate job's payload
+ * was seeded with; before article_drafts.revision_instructions existed, it
+ * was only ever visible in a raw `jobs` row, not on the request detail page
+ * a reviewer actually looks at. */
+function InstructionsGiven({ instructions }: { instructions: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 text-left font-medium text-foreground"
+      >
+        <span>Instructions given to the AI for this version</span>
+        {expanded ? <ChevronUp className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+      </button>
+      {expanded && <p className="mt-2 whitespace-pre-wrap text-muted">{instructions}</p>}
+    </div>
+  );
+}
+
 function EvaluationSummary({
   evaluation,
 }: {
@@ -987,7 +1246,31 @@ function EvaluationSummary({
         <span className="text-xs font-medium text-foreground">
           {evaluation.overall_score.toFixed(2)} / {MAX_RUBRIC_SCORE}
         </span>
+        {evaluation.score_delta_from_parent != null && (
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+              evaluation.score_delta_from_parent < 0
+                ? "border-red-300 bg-red-50 text-red-700"
+                : evaluation.score_delta_from_parent > 0
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-surface-border bg-surface-card-hover text-muted"
+            }`}
+            title="Change in score versus the draft this version was regenerated from"
+          >
+            {evaluation.score_delta_from_parent > 0 ? "▲" : evaluation.score_delta_from_parent < 0 ? "▼" : "="}{" "}
+            {Math.abs(evaluation.score_delta_from_parent).toFixed(2)} vs previous version
+          </span>
+        )}
       </div>
+      {evaluation.score_delta_from_parent != null && evaluation.score_delta_from_parent < 0 && (
+        <p className="mt-1 text-xs text-red-700">
+          This version scored lower than the draft it was regenerated from — a regression like this is never sent
+          to you as a &ldquo;pass&rdquo;: it&apos;s automatically retried, told to compare against the previous
+          draft and restore whatever it dropped, for as long as revisions remain. If you&apos;re seeing this on a
+          version awaiting review, the automatic retries ran out — check the previous version for anything worth
+          keeping.
+        </p>
+      )}
       <p className="mt-1 text-muted">{evaluation.feedback}</p>
       {evaluation.unsupported_claims?.length > 0 && (
         <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2">
@@ -1053,10 +1336,12 @@ function ReviewButton({
   label,
   onClick,
   variant,
+  disabled,
 }: {
   label: string;
   onClick: () => void;
   variant: "approve" | "reject" | "neutral";
+  disabled?: boolean;
 }) {
   const styles = {
     approve: "bg-emerald-600 text-white hover:bg-emerald-700",
@@ -1065,7 +1350,11 @@ function ReviewButton({
   }[variant];
 
   return (
-    <button onClick={onClick} className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${styles}`}>
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 ${styles}`}
+    >
       {label}
     </button>
   );

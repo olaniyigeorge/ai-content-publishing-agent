@@ -9,6 +9,18 @@ import uuid
 from copy import deepcopy
 from datetime import UTC, datetime
 
+from postgrest.exceptions import APIError
+
+# Mirrors the real Postgres unique constraints that service-layer code
+# relies on as a race-condition backstop (e.g. article_drafts_version_unique)
+# — without this the fake can't reproduce the exact
+# 'duplicate key value violates unique constraint' failure those code paths
+# are written to survive, so a regression there would pass in tests and only
+# surface against a live Supabase project.
+UNIQUE_CONSTRAINTS = {
+    "article_drafts": ("content_request_id", "option_label", "version"),
+}
+
 
 def _check_json_serializable(payload):
     """The real supabase-py client json.dumps()'s the payload with no custom
@@ -117,10 +129,27 @@ class _Query:
         if self._op in ("insert", "upsert"):
             payloads = self._payload if isinstance(self._payload, list) else [self._payload]
             inserted = []
+            unique_key = UNIQUE_CONSTRAINTS.get(self._table)
             for p in payloads:
                 row = deepcopy(p)
                 row.setdefault("id", str(uuid.uuid4()))
                 row.setdefault("created_at", datetime.now(UTC).isoformat())
+                if self._op == "insert" and unique_key and any(
+                    all(r.get(f) == row.get(f) for f in unique_key) for r in rows
+                ):
+                    raise APIError(
+                        {
+                            "message": (
+                                f'duplicate key value violates unique constraint "{self._table}_version_unique"'
+                            ),
+                            "code": "23505",
+                            "hint": None,
+                            "details": (
+                                f"Key ({', '.join(unique_key)})="
+                                f"({', '.join(str(row.get(f)) for f in unique_key)}) already exists."
+                            ),
+                        }
+                    )
                 if self._op == "upsert":
                     existing_idx = next((i for i, r in enumerate(rows) if r.get("id") == row.get("id")), None)
                     if existing_idx is not None:

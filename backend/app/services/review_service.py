@@ -6,6 +6,7 @@ only from here.
 from datetime import UTC, datetime
 
 from app.services.evaluation_context import with_evaluation_context
+from app.services.gap_fill_gate import maybe_queue_gap_fill_research
 from app.services.job_guard import has_pending_revision
 from db.client import get_supabase
 from shared.enums import (
@@ -117,17 +118,27 @@ def submit_review(content_request_id: str, body: HumanReviewIn, reviewer_user_id
         instructions = with_evaluation_context(
             body.notes or "Address the reviewer's feedback.", draft["id"], db=db
         )
-        db.table("jobs").insert(
-            {
-                "job_type": JobType.GENERATE.value,
-                "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
-                "reference_id": draft["id"],
-                "payload": {"revision_instructions": instructions},
-            }
-        ).execute()
-        db.table("content_requests").update({"status": RequestStatus.REVISING.value, "updated_at": now}).eq(
-            "id", content_request_id
-        ).execute()
+        gap_fill_job = maybe_queue_gap_fill_research(
+            draft=draft,
+            request_row=db.table("content_requests").select("*").eq("id", content_request_id).execute().data[0],
+            revision_instructions=instructions,
+            db=db,
+        )
+        if not gap_fill_job:
+            # Only reached when this draft has real source material (or the
+            # gap-fill budget is spent) — otherwise a search for real sources
+            # was just queued instead, and it'll re-queue `generate` itself.
+            db.table("jobs").insert(
+                {
+                    "job_type": JobType.GENERATE.value,
+                    "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
+                    "reference_id": draft["id"],
+                    "payload": {"revision_instructions": instructions},
+                }
+            ).execute()
+            db.table("content_requests").update({"status": RequestStatus.REVISING.value, "updated_at": now}).eq(
+                "id", content_request_id
+            ).execute()
     # OPTION_SELECTED: records which lineage the human picked; does not by
     # itself imply approval (EDGE_CASES.md #27) — no downstream job enqueued.
 

@@ -36,18 +36,24 @@ submission, or do you want a push-based update (SSE from the worker) for the
 demo/Loom video? Polling is simpler and sufficient for a small reviewer team;
 flagging in case the Loom video needs snappier updates.
 
-## ⚠️ Security blocker in `auth/service.py::_is_allowlisted` — needs your attention
+## ✅ Fixed — filter-injection risk in `auth/service.py::_is_allowlisted`
 
-Backend audit found a real PostgREST filter-injection risk at
-`_is_allowlisted()` (builds `.or_(f"and(type.eq.email,value.eq.{email}),...")`
-by interpolating the raw email into the filter string). PostgREST's filter
-grammar uses `,`/`(`/`)`/`.` as syntax — an email crafted with those
-characters could alter the filter logic and potentially bypass the
-allowlist check entirely. **I have not touched this** since you're actively
-editing this exact file right now — flagging it here rather than editing
-out from under you. Fix direction: replace the single `.or_()` string with
-two separate `.eq()` queries (one by email, one by domain) unioned in
-Python, instead of building a filter string from user input.
+**Resolved 2026-09-17.** `_is_allowlisted()` used to build
+`.or_(f"and(type.eq.email,value.eq.{email}),...")` by interpolating the raw
+email into a PostgREST filter string. PostgREST's filter grammar uses
+`,`/`(`/`)`/`.` as syntax, so a crafted email containing those characters
+could alter the filter logic and potentially bypass the allowlist check
+entirely.
+
+Fixed by replacing the single `.or_()` string with two separate `.eq()`
+queries (one by email, one by domain) unioned in Python — `.eq()` values
+are passed as parameters, not interpolated into filter syntax, so there's
+no longer anywhere for a crafted value to break out of the intended field.
+Added two regression tests in `tests/test_auth.py`:
+`test_is_allowlisted_matches_email_and_domain_rules` (still matches real
+email/domain rules) and `test_is_allowlisted_is_not_vulnerable_to_filter_injection`
+(a crafted email containing `,`/`(`/`)` no longer widens the match). Full
+backend suite: 92 passed.
 
 ## Backend audit fixes applied vs. logged as backlog
 
@@ -148,12 +154,21 @@ self-reported `formatting_check`/rubric "pass" is no longer trusted alone:
 
 Total backend test count: 31 → 63, all passing; ruff clean.
 
-## No `access_rules` management UI in the frontend
+## ✅ Resolved — `access_rules` management UI built
 
-The backend already exposes `GET/POST/DELETE /auth/access-rules` (any
-authenticated user, per the code comment — "no separate admin role exists
-yet"). Frontend doesn't have a page for it yet. **Decision needed:** build a
-minimal admin page for this, or manage the allowlist purely via direct DB
-inserts (as done above) for the duration of this project? Leaning toward
-skipping UI for it unless multiple people need to self-manage access.
+**Resolved 2026-09-17.** Added `/admin/access` in the frontend
+(`frontend/app/(app)/admin/access/page.tsx`) — any signed-in user can view,
+grant, and revoke email/domain access rules against the existing
+`GET/POST/DELETE /auth/access-rules` endpoints. No new backend endpoints
+were needed; the router already allowed any authenticated user (no
+separate admin role exists yet — same limitation as before, just no longer
+also missing a UI). Deleting a rule prompts for confirmation since it can
+lock someone out of logging in. Build and lint both pass (`npm run build`,
+`npm run lint`), and the page's auth-gated shell behaves identically to the
+existing publishing-queue page when hit without a session.
+
+**Still open, not addressed by this:** no separate admin role — any
+authenticated user can add/remove anyone's access, including their own.
+Fine for a small trusted team; would need a real role check before this UI
+is exposed to a wider group.
 

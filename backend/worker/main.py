@@ -24,6 +24,7 @@ from shared.enums import (
 from worker.claim import claim_job
 from worker.handlers.adapt import handle_adapt
 from worker.handlers.evaluate import handle_evaluate
+from worker.handlers.gather_evidence import handle_gather_evidence
 from worker.handlers.generate import handle_generate
 from worker.handlers.plan import handle_plan
 from worker.handlers.publish import handle_publish
@@ -37,6 +38,7 @@ HANDLERS = {
     JobType.EVALUATE.value: handle_evaluate,
     JobType.ADAPT.value: handle_adapt,
     JobType.PUBLISH.value: handle_publish,
+    JobType.GATHER_EVIDENCE.value: handle_gather_evidence,
 }
 
 # job_type -> pipeline_stage, used only for the failure stage_events row
@@ -48,6 +50,7 @@ STAGE_FOR_JOB_TYPE = {
     JobType.EVALUATE.value: PipelineStage.EVALUATION.value,
     JobType.ADAPT.value: PipelineStage.ADAPTATION.value,
     JobType.PUBLISH.value: PipelineStage.PUBLISHING.value,
+    JobType.GATHER_EVIDENCE.value: PipelineStage.EVIDENCE_GATHERING.value,
 }
 
 
@@ -158,7 +161,13 @@ def run_forever() -> None:
             time.sleep(settings.worker_poll_interval_seconds)
             continue
         print(f"processing job {job['id']} ({job['job_type']}), attempt {job['attempts']}")
-        process_one_job(job)
+        try:
+            process_one_job(job)
+        except Exception as exc:  # noqa: BLE001 — process_one_job's OWN failure-handling code
+            # (e.g. an insert hitting a DB constraint) must not kill the loop
+            # either — that's a worse silent failure than one stuck job,
+            # since it takes every other in-flight request down with it.
+            print(f"process_one_job({job['id']}) failed outside its own handling: {exc}")
 
 
 if __name__ == "__main__":

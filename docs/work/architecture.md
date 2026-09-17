@@ -44,14 +44,19 @@ create type adaptation_status as enum ('draft', 'approved', 'queued', 'published
 -- and the worker has given up. Kept separate from 'failed' deliberately — see §5.
 create type queue_status as enum ('queued', 'processing', 'published', 'failed', 'dead_letter', 'cancelled');
 
-create type job_type as enum ('research', 'plan', 'generate', 'evaluate', 'adapt', 'publish');
+-- 'gather_evidence' (added 2026-09-17): the evidence-driven regeneration
+-- step between an evaluation that flags unsupported claims and the next
+-- generate call — see §3.11.
+create type job_type as enum (
+  'research', 'plan', 'generate', 'evaluate', 'adapt', 'publish', 'gather_evidence'
+);
 create type job_reference_type as enum ('content_request', 'article_draft', 'publishing_queue');
 create type job_status as enum ('pending', 'processing', 'succeeded', 'failed');
 
 create type pipeline_stage as enum (
   'intake', 'research', 'retrieval', 'planning', 'generation',
   'evaluation', 'revision', 'human_review', 'adaptation',
-  'publishing_queue', 'publishing'
+  'publishing_queue', 'publishing', 'evidence_gathering', 'grounding_validation'
 );
 create type stage_event_status as enum ('started', 'succeeded', 'failed');
 
@@ -247,6 +252,51 @@ Every stage writes here on `started`, `succeeded`, and `failed`. This table alon
 | `detail` | jsonb | nullable — e.g. `{"draft_id": ..., "version": 2}` or `{"source_url": ...}` |
 | `error_message` | text | nullable |
 | `created_at` | timestamptz | append-only, no updates |
+
+### 3.11 Evidence-driven regeneration (2026-09-17) — no new tables, structured job payloads
+
+When `evaluations.unsupported_claims` is non-empty, the revise branch of
+`worker/handlers/evaluate.py` no longer just rewords: it converts the raw
+evaluator output into structured regeneration requirements
+(`app/services/regeneration_requirements.py`) and enqueues a
+`gather_evidence` job instead of a `generate` job directly.
+
+`worker/handlers/gather_evidence.py`, per claim:
+1. Searches the real web (`worker/firecrawl.py::search_web`) — never
+   invents a candidate.
+2. Asks a model to verify whether a specific candidate actually supports
+   the claim (`claude/service.py::verify_claim_evidence`, `claude/prompts/
+   verify_evidence.py`) — a URL existing is not enough.
+3. Mechanically re-checks the model's claimed excerpt is actually present
+   (near-verbatim) in that source's real retrieved content before trusting
+   it — a source must not enter the evidence package merely because a
+   model said so.
+4. Persists verified sources as ordinary `sources` rows (real url/title,
+   `confidence = 'strong'`) and builds an `evidence_package` (per entry:
+   `claim_text`, `claim_type`, `source_title`, `publisher`, `url`,
+   `source_type`, `excerpt`, `supported_claim`) plus a `claims_to_address`
+   list for claims no evidence was found for.
+5. Enqueues the actual `generate` job with `evidence_package`,
+   `claims_to_address`, and `escalated_model = OPUS` in its payload.
+
+`worker/handlers/generate.py` passes both lists into
+`claude_service.generate_draft(...)` (rendered into the prompt by
+`claude/prompts/generate.py`: "use this verified evidence for these
+claims" / "hedge-or-remove these unresolved ones"), then — after inserting
+the new immutable draft version exactly as before — runs a pre-flight
+grounding check (`claude/grounding_validator.py::validate_grounding`, a
+deterministic, non-LLM check for fabricated URLs, citation mismatches,
+quantitative paraphrase drift, and unsupported trend/causal/general
+claims) *before* the expensive per-draft evaluator. A failure regenerates
+directly (skipping the evaluate call), subject to the same
+`settings.max_revisions` cap the evaluate loop already uses; once the cap
+is reached, it still proceeds to the real evaluator so a human reviewer
+sees actual evaluation feedback rather than a silent loop.
+
+`ClaimType` (`shared/enums.py`) — `supported_fact` / `attributed_claim` /
+`inference` / `recommendation` / `unsupported` — classifies entries inside
+these job payloads only; it's not a Postgres enum/column, since nothing
+here needed a new persisted table.
 
 ---
 

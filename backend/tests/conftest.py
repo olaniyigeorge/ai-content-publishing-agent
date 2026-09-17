@@ -36,6 +36,7 @@ def fake_db(monkeypatch):
         "worker.handlers.evaluate",
         "worker.handlers.adapt",
         "worker.handlers.publish",
+        "worker.handlers.gather_evidence",
         "worker.main",
         "worker.claim",
     ]:

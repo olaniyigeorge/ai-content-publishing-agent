@@ -4,6 +4,32 @@
 
 ---
 
+## 2026-09-17 — production-readiness review + submission prep session
+
+### What happened this session
+
+Full review of the project for production readiness, framed as a business owner about to trust this with their agency's LinkedIn/X/newsletter content, plus a pass at the submission deliverables.
+
+- **Security fix (real, not cosmetic):** `_is_allowlisted()` in `backend/auth/service.py` had an unresolved filter-injection risk (flagged in `DECISIONS.md`, never fixed) — it built a PostgREST `.or_()` filter by string-interpolating the raw email. Fixed by replacing it with two separate parameterized `.eq()` queries unioned in Python. Added two regression tests (`tests/test_auth.py`): one confirming real email/domain rules still match, one proving a crafted email containing filter syntax no longer widens the match. Full backend suite: **92/92 passing.**
+- **Confirmed live and healthy:** frontend (`ai-content-publishing-agent.vercel.app`) returns 200; backend `/health/ready` returns 200 (pings Supabase for real); `/auth/request-code` gives an identical response for allowlisted vs. non-allowlisted emails (no enumeration).
+- **Confirmed clean:** no secrets, keys, or `.env` files anywhere in git history.
+- **New docs created:**
+  - `BUSINESS_OWNER_QA.md` — added an "Expected Business Results" section (§0) framing this in ROI terms a founder would actually use: time-to-first-draft, where the bottleneck actually moves, cost-per-piece visibility, and what the system explicitly does *not* do.
+  - `LIVE_TEST_SESSION.md` — the 8 required scenarios turned into a concrete live walkthrough plan against the deployed URLs, so the testing evidence table gets filled with verified results, not carried-over assumptions from earlier local sessions.
+  - `VIDEO_SCRIPT.md` — a timed script hitting the required flow within the actual 5–8 minute limit (Week 3's video ran 9 minutes and lost marks for it).
+  - `ONE_PAGER.md` — the one-page documentation deliverable, which did not exist before this session. Covers purpose/success criteria, how it works, how to use it, and an honest appendix of limitations.
+- **Testing evidence table and reflection sheet in `SUBMISSION_WORKBOOK.md` filled in**, sourced from real findings in `TESTING_FINDINGS.md`/`TEST_INTAKE_REQUESTS.md` where they exist, and honestly marked "pending live reconfirm" where they haven't been re-walked on the actual deployed build yet — Human Approval and Channel Formatting are flagged as **not yet verified live at all** and should be the first things checked in the next session.
+
+### What's still genuinely missing before Friday's submission
+
+- [ ] Live walkthrough of all 8 scenarios on the deployed app (`LIVE_TEST_SESSION.md`), especially Human Approval and Channel Formatting which have never been explicitly re-walked.
+- [ ] Content sample pack (input + article + LinkedIn + X + newsletter + source list) — does not exist yet, needs a real approved request to generate it from.
+- [ ] Demo video recorded and uploaded (script is ready in `VIDEO_SCRIPT.md`).
+- [ ] One-pager published somewhere linkable (currently a repo file, `ONE_PAGER.md` — needs to go somewhere shareable per the submission form's "paste the link" requirement).
+- [ ] Final settle-and-check pass against `SUBMISSION_WORKBOOK.md`'s "Things to verify before submitting" checklist.
+
+---
+
 ## 2026-09-14 — first build session
 
 ### What exists so far

@@ -3,9 +3,10 @@ dict, not fetched live — the API doesn't expose current pricing, so this has
 to be updated by hand when Anthropic changes rates. Source: platform.claude.com/docs/en/about-claude/pricing.
 """
 
-from claude.models import HAIKU, SONNET
+from claude.models import HAIKU, OPUS, SONNET
 
 PRICE_PER_MILLION_USD: dict[str, dict[str, float]] = {
+    OPUS: {"input": 5.00, "output": 25.00},
     SONNET: {"input": 2.00, "output": 10.00},
     HAIKU: {"input": 1.00, "output": 5.00},
 }

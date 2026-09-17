@@ -103,6 +103,7 @@ class ArticleDraftOut(BaseModel):
     body_markdown: str
     source_ids_used: list[UUID]
     status: DraftStatus
+    revision_instructions: str | None = None
     created_at: datetime
 
 
@@ -117,6 +118,7 @@ class EvaluationOut(BaseModel):
     unsupported_claims: list[str] = []
     sections_to_revise: list[str] = []
     evaluated_by: EvaluatedBy
+    score_delta_from_parent: float | None = None
     created_at: datetime
 
 

@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: int = 5
     job_max_attempts: int = 3
     queue_max_attempts: int = 3
+
+    job_stale_processing_seconds: int = 600
+    """EDGE_CASES.md #61: a job whose worker process died mid-handler (OOM,
+    redeploy, SIGKILL) between claiming it and marking it succeeded/failed is
+    left at status='processing' forever — nothing else ever revisits it. Kept
+    in sync with the same interval hardcoded in claim_pending_job()
+    (alembic/versions/0007_reclaim_stale_jobs.py), which reclaims it back to
+    pending/failed on the DB side; this setting is the app-layer mirror used
+    by job_guard.has_pending_revision so a stuck row doesn't also permanently
+    block regenerating the draft it targeted while waiting for the worker's
+    next poll to reclaim it."""
     max_revisions: int = 3
     """EDGE_CASES.md #24: hard cap on the evaluate->generate revision loop so
     a draft that never clears the rubric doesn't burn Claude calls forever."""

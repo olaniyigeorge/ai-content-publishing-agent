@@ -119,6 +119,7 @@ export interface ArticleDraftOut {
   body_markdown: string;
   source_ids_used: string[];
   status: DraftStatus;
+  revision_instructions: string | null;
   created_at: string;
 }
 
@@ -133,6 +134,7 @@ export interface EvaluationOut {
   unsupported_claims: string[];
   sections_to_revise: string[];
   evaluated_by: EvaluatedBy;
+  score_delta_from_parent: number | null;
   created_at: string;
 }
 

@@ -10,12 +10,17 @@
  * run — this is a read-only preview, not a place to execute the content. */
 export function HtmlContentPreview({ html }: { html: string }) {
   return (
-    <iframe
-      srcDoc={html}
-      sandbox=""
-      title="Rendered newsletter preview"
-      className="mt-2 w-full rounded-lg border border-surface-border bg-white"
-      style={{ height: "480px" }}
-    />
+    <div className="mt-2">
+      <iframe
+        srcDoc={html}
+        sandbox=""
+        title="Rendered newsletter preview"
+        className="h-[300px] w-full rounded-lg border border-surface-border bg-white sm:h-[480px]"
+      />
+      <p className="mt-1.5 text-[11px] text-muted">
+        Use &ldquo;Copy for Gmail&rdquo; below to paste a formatted email — or click into the preview above, select
+        all (Ctrl/Cmd+A) and copy from there. The plain copy icon copies raw HTML source instead.
+      </p>
+    </div>
   );
 }

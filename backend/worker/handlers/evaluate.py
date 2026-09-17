@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 import claude.service as claude_service
 from app.config import get_settings
+from app.services.regeneration_requirements import build_regeneration_requirements
+from claude.models import OPUS
 from claude.outputs import require_fields
 from claude.quality_guards import SOURCE_GROUNDING_FLOOR, check_article, is_ungroundable
 from db.client import get_supabase
@@ -57,12 +59,58 @@ def handle_evaluate(job: dict) -> None:
     # confidently-worded "pass" from carrying an unresolved unsupported claim
     # through to a human reviewer as if it were solid.
     guard = check_article(draft["body_markdown"])
-    passed = result["overall_status"] == "pass" and not guard["violations"] and not unsupported_claims
+
+    # "Every win carried forward, never a silent regression": compare this
+    # draft's score against the immediate parent draft's own most recent
+    # evaluation, when one exists. This has to be computed before `passed`
+    # below — a regression is now a hard non-pass, exactly like a hard guard
+    # violation or an unresolved unsupported claim, not just a badge shown
+    # after the fact. Without that, a revision that fixed whatever was
+    # flagged but quietly dropped something that already worked could still
+    # sail through to human review as a "pass," with only a small warning
+    # label to notice — this makes it impossible for that to happen silently:
+    # a regression is retried automatically, up to the same revision cap
+    # everything else is bounded by.
+    score_delta_from_parent = None
+    parent_score = None
+    if draft.get("parent_draft_id"):
+        parent_evals = (
+            db.table("evaluations")
+            .select("overall_score")
+            .eq("article_draft_id", draft["parent_draft_id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if parent_evals:
+            parent_score = parent_evals[0]["overall_score"]
+            score_delta_from_parent = result["overall_score"] - parent_score
+    is_regression = score_delta_from_parent is not None and score_delta_from_parent < 0
+
+    passed = (
+        result["overall_status"] == "pass"
+        and not guard["violations"]
+        and not unsupported_claims
+        and not is_regression
+    )
     revision_notes = list(result["recommended_changes"])
     if guard["violations"]:
         revision_notes = [f"[hard guard] {v}" for v in guard["violations"]] + revision_notes
     if unsupported_claims and result["overall_status"] == "pass":
         revision_notes = [f"[unsupported claim] {c}" for c in unsupported_claims] + revision_notes
+    if is_regression:
+        # Not just a number for the UI — feed it back into the next
+        # revision's own instructions, so the model is explicitly told to go
+        # compare against the parent draft and restore whatever it dropped,
+        # instead of only chasing the newly flagged issues and drifting
+        # further from what worked.
+        revision_notes = [
+            f"[regression] this revision scored {result['overall_score']:.2f}/5, lower than its parent "
+            f"draft's {parent_score:.2f}/5, despite addressing that draft's feedback — compare against the "
+            "previous draft and restore any content, structure, or grounded claims this version dropped or "
+            "weakened, in addition to the following"
+        ] + revision_notes
 
     evaluation_row = (
         db.table("evaluations")
@@ -77,6 +125,7 @@ def handle_evaluate(job: dict) -> None:
                 "unsupported_claims": unsupported_claims,
                 "sections_to_revise": sections_to_revise,
                 "evaluated_by": EvaluatedBy.AI.value,
+                "score_delta_from_parent": score_delta_from_parent,
             }
         )
         .execute()
@@ -207,17 +256,68 @@ def handle_evaluate(job: dict) -> None:
                     ),
                 }
             ).execute()
+        if is_regression:
+            # Only reachable here via at_cap/ungroundable/reject — a plain
+            # regression alone can no longer reach this block (it's folded
+            # into `passed` above, which routes it back to another revision
+            # instead). This is what happens when even the revision cap ran
+            # out before it recovered.
+            db.table("stage_events").insert(
+                {
+                    "content_request_id": request_id,
+                    "stage": PipelineStage.EVALUATION.value,
+                    "status": StageEventStatus.FAILED.value,
+                    "detail": {
+                        "draft_id": draft_id,
+                        "version": draft["version"],
+                        "score_delta_from_parent": score_delta_from_parent,
+                    },
+                    "error_message": (
+                        f"this version still scored lower than its parent draft ({parent_score:.2f} -> "
+                        f"{result['overall_score']:.2f}) after exhausting the available automatic revisions "
+                        "— sending to review as-is; check the previous version for anything worth keeping"
+                    ),
+                }
+            ).execute()
         return
 
-    # revise: enqueue another generate job against this draft
+    # revise: most revisions are wording problems Sonnet can fix on its own.
+    # But specific unsupported claims call for something more mechanical
+    # than a reword or a stronger model guessing better — go find real,
+    # verified evidence for those exact claims first (worker/handlers/
+    # gather_evidence.py), then regenerate with that evidence in hand,
+    # escalated to Opus. Weak-but-nonspecific grounding (no named claims to
+    # research — grounding_is_weak, as opposed to ungroundable's "no real
+    # evidence" case routed to gap-fill above) still escalates straight to
+    # Opus, since there's nothing concrete to look up.
     db.table("content_requests").update(
         {"status": RequestStatus.REVISING.value, "updated_at": datetime.now(UTC).isoformat()}
     ).eq("id", request_id).execute()
+
+    if unsupported_claims:
+        regeneration_requirements = build_regeneration_requirements(evaluation_result=result, guard=guard)
+        db.table("jobs").insert(
+            {
+                "job_type": JobType.GATHER_EVIDENCE.value,
+                "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
+                "reference_id": draft_id,
+                "payload": {
+                    "claims": [c["claim_text"] for c in regeneration_requirements["claims_needing_research"]],
+                    "revision_instructions": evaluation_row["revision_instructions"],
+                    "regeneration_requirements": regeneration_requirements,
+                },
+            }
+        ).execute()
+        return
+
+    generate_payload = {"revision_instructions": evaluation_row["revision_instructions"]}
+    if grounding_is_weak:
+        generate_payload["escalated_model"] = OPUS
     db.table("jobs").insert(
         {
             "job_type": JobType.GENERATE.value,
             "reference_type": JobReferenceType.ARTICLE_DRAFT.value,
             "reference_id": draft_id,
-            "payload": {"revision_instructions": evaluation_row["revision_instructions"]},
+            "payload": generate_payload,
         }
     ).execute()
