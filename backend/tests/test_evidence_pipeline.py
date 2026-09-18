@@ -336,6 +336,7 @@ def test_grounding_validation_passes_a_clean_draft_through_to_evaluation(fake_db
             "id": "00000000-0000-0000-0000-000000000098",
             "content_request_id": REQUEST_ID,
             "url": "https://example.com/source",
+            "excerpt_selected": "This is the real excerpt content that was actually fetched from the source.",
             "retrieval_method": "url_provided",
             "status": "selected",
             "confidence": "strong",

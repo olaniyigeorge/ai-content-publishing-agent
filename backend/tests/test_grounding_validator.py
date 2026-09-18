@@ -67,6 +67,25 @@ def test_unsupported_productized_service_claim_is_flagged():
     assert any("unsupported_claim" in v for v in result["violations"])
 
 
+def test_citing_a_selected_but_never_fetched_source_is_still_fabricated():
+    """TESTING_FINDINGS2.md, 2026-09-18: a source can be marked `selected`
+    (override_source_status) without ever being successfully fetched — e.g.
+    a reviewer clicking "mark selected" on a 403'd/failed source. It has no
+    excerpt_selected. Citing it must still be caught as fabricated: there is
+    no real content behind that URL to ground anything against, so treating
+    it as "known" would let the model attribute any claim to it for free."""
+    never_fetched_sources = [
+        {"id": "s2", "url": "https://www.linkedin.com/business/marketing", "excerpt_selected": None},
+    ]
+    body = (
+        "LinkedIn's algorithm favors dwell time on the platform "
+        "([source](https://www.linkedin.com/business/marketing))."
+    )
+    result = validate_grounding(body_markdown=body, sources=never_fetched_sources)
+    assert result["passed"] is False
+    assert any("fabricated_url" in v for v in result["violations"])
+
+
 def test_unsupported_causal_claim_is_flagged():
     body = "Front-loaded setup costs cause most agencies to abandon retainer contracts by month six."
     result = validate_grounding(body_markdown=body, sources=SOURCES)

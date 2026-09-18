@@ -9,6 +9,7 @@ job_type, and on failure applies the shared backoff/dead-letter policy
 
 import time
 import traceback
+from datetime import UTC, datetime
 
 from app.config import get_settings
 from claude.usage import usage_context
@@ -19,6 +20,7 @@ from shared.enums import (
     JobType,
     PipelineStage,
     QueueStatus,
+    RequestStatus,
     StageEventStatus,
 )
 from worker.claim import claim_job
@@ -140,6 +142,17 @@ def process_one_job(job: dict) -> None:
 
         if job["job_type"] == JobType.PUBLISH.value:
             _mirror_publish_failure(job, outcome["exhausted"], str(exc), outcome["next_attempt_at"])
+        elif request_id and outcome["exhausted"]:
+            # Exhausting retries wrote a FAILED stage_events row and left
+            # jobs.status FAILED, but content_requests.status was never
+            # touched — the request sat at whatever in-flight status it had
+            # (e.g. "planning") forever, with no terminal state for the UI
+            # to show (TESTING_FINDINGS2.md, 2026-09-18: test cases 1 and 2
+            # looked "stuck" indefinitely after a planning job exhausted its
+            # 3 attempts). RequestStatus.FAILED exists for exactly this.
+            db.table("content_requests").update(
+                {"status": RequestStatus.FAILED.value, "updated_at": datetime.now(UTC).isoformat()}
+            ).eq("id", request_id).execute()
 
 
 def run_forever() -> None:

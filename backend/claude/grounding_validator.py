@@ -84,9 +84,20 @@ def validate_grounding(*, body_markdown: str, sources: list[dict]) -> dict:
     """`sources` is the same list[dict] shape passed to generate_draft (each
     needs `url`; `excerpt_selected` powers the citation-mismatch and
     quantitative-drift checks). Returns
-    {"passed": bool, "violations": list[str]}."""
-    known_urls = {s["url"] for s in sources if s.get("url")}
-    excerpt_by_url = {s["url"]: (s.get("excerpt_selected") or "") for s in sources if s.get("url")}
+    {"passed": bool, "violations": list[str]}.
+
+    A source can be marked `selected` (request_state_service.override_source_status)
+    even when it was never actually fetched — e.g. a reviewer clicking "mark
+    selected" on a failed/blocked source, or asking the model to "try again"
+    on a URL that 403'd. That source has no `excerpt_selected` to check
+    anything against. Treating its URL as "known" anyway would let a
+    citation to it skip every check below (fabricated_url passes because the
+    URL is "known"; citation_mismatch and quantitative_paraphrase_drift both
+    no-op on an empty excerpt) — a free pass to attribute any claim to a
+    source with zero actual content behind it (TESTING_FINDINGS2.md,
+    2026-09-18). Only URLs with real retrieved content count as known."""
+    known_urls = {s["url"] for s in sources if s.get("url") and s.get("excerpt_selected")}
+    excerpt_by_url = {s["url"]: s["excerpt_selected"] for s in sources if s.get("url") and s.get("excerpt_selected")}
     violations: list[str] = []
 
     # 1. fabricated/unverified URLs — cited but never actually provided.
