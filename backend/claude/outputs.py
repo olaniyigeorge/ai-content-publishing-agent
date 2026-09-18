@@ -115,7 +115,13 @@ PLAN_SCHEMA = {
             },
             "required": ["sections"],
         },
-        "target_keywords": {"type": "array", "items": {"type": "string"}},
+        "target_keywords": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Required — never omit this. One primary keyword plus 2-4 secondary keywords "
+            "derived from the content idea, per SEO best practice. Omitting this field fails the "
+            "planning step outright, even if the outline itself is complete.",
+        },
     },
     "required": ["outline", "target_keywords"],
 }

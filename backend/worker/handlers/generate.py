@@ -138,7 +138,7 @@ def handle_generate(job: dict) -> None:
                 "payload": {
                     "revision_instructions": (
                         "The pre-flight grounding check found problems that must be fixed before this goes to "
-                        "evaluation: " + "; ".join(grounding["violations"])
+                        "evaluation:\n" + "\n".join(f"- {v}" for v in grounding["violations"])
                     ),
                     "evidence_package": evidence_package,
                     "claims_to_address": claims_to_address,

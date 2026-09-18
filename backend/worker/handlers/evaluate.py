@@ -121,7 +121,15 @@ def handle_evaluate(job: dict) -> None:
                 "overall_score": result["overall_score"],
                 "passed_threshold": passed,
                 "feedback": result["feedback"],
-                "revision_instructions": None if passed else ("; ".join(revision_notes) or result["feedback"]),
+                # A run-on "; "-joined paragraph was both unreadable in the
+                # UI (article_drafts.revision_instructions renders pre-wrap
+                # verbatim) and, per direct observation across several test
+                # requests, harder for the model to reliably act on than the
+                # same content with one recommendation per line
+                # (TESTING_FINDINGS2.md, 2026-09-18).
+                "revision_instructions": (
+                    None if passed else ("\n".join(f"- {note}" for note in revision_notes) or result["feedback"])
+                ),
                 "unsupported_claims": unsupported_claims,
                 "sections_to_revise": sections_to_revise,
                 "evaluated_by": EvaluatedBy.AI.value,

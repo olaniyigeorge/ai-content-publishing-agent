@@ -10,6 +10,14 @@ from db.client import get_supabase
 
 
 def latest_evaluation_context(draft_id: str, db=None) -> str | None:
+    """Every field here is joined onto one line with newlines removed, into
+    one run-on paragraph — both hard for a human reviewer to read in the UI
+    (article_drafts.revision_instructions is shown pre-wrap, so it renders
+    exactly as written) and, per direct observation across several test
+    requests, harder for the model to reliably act on than the same content
+    with real section breaks (TESTING_FINDINGS2.md, 2026-09-18). Headed,
+    line-broken sections fix both without changing what information is
+    carried."""
     db = db or get_supabase()
     rows = (
         db.table("evaluations")
@@ -23,16 +31,17 @@ def latest_evaluation_context(draft_id: str, db=None) -> str | None:
     if not rows:
         return None
     evaluation = rows[0]
-    parts = [f"Prior evaluation feedback: {evaluation['feedback']}"]
+    parts = [f"Prior evaluation feedback:\n{evaluation['feedback']}"]
     if evaluation.get("unsupported_claims"):
-        parts.append(
-            "Previously flagged unsupported/overstated claims: " + "; ".join(evaluation["unsupported_claims"])
-        )
+        claims = "\n".join(f"- {c}" for c in evaluation["unsupported_claims"])
+        parts.append(f"Previously flagged unsupported/overstated claims:\n{claims}")
     if evaluation.get("revision_instructions"):
-        parts.append(f"Previously recommended changes: {evaluation['revision_instructions']}")
-    return " ".join(parts)
+        # Already bulleted/line-broken by worker/handlers/evaluate.py — pass
+        # through as-is rather than reformatting it a second time here.
+        parts.append(f"Previously recommended changes:\n{evaluation['revision_instructions']}")
+    return "\n\n".join(parts)
 
 
 def with_evaluation_context(instructions: str, draft_id: str, db=None) -> str:
     context = latest_evaluation_context(draft_id, db=db)
-    return f"{instructions} {context}" if context else instructions
+    return f"{instructions}\n\n{context}" if context else instructions
