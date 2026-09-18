@@ -161,7 +161,24 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
   async function copyContent() {
     if (!q.content) return;
     try {
-      await navigator.clipboard.writeText(q.content_format === "html" ? htmlToPlainText(q.content) : q.content);
+      if (q.content_format === "html") {
+        // Same rich-clipboard write as the request detail page's "Copy for
+        // Gmail" button — a plain writeText only ever puts a text/plain
+        // payload on the clipboard, which is what made pasting a newsletter
+        // dump raw HTML markup instead of the rendered email.
+        if (typeof ClipboardItem !== "undefined") {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/html": new Blob([q.content], { type: "text/html" }),
+              "text/plain": new Blob([q.content], { type: "text/plain" }),
+            }),
+          ]);
+        } else {
+          await navigator.clipboard.writeText(q.content);
+        }
+      } else {
+        await navigator.clipboard.writeText(q.content);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -243,7 +260,13 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
       {rowError && <p className="mt-2 text-sm text-red-600">{rowError}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <IconButton icon={copied ? Check : Copy} label={copied ? "Copied" : "Copy"} onClick={copyContent} disabled={!q.content} active={copied} />
+        <IconButton
+          icon={copied ? Check : Copy}
+          label={copied ? "Copied" : q.content_format === "html" ? "Copy formatted for pasting" : "Copy"}
+          onClick={copyContent}
+          disabled={!q.content}
+          active={copied}
+        />
         {share && <IconButton icon={share.icon} label={share.label} onClick={share.onClick} />}
 
         {q.status === "queued" && (
