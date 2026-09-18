@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Info, Mail, Share2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
@@ -18,6 +18,38 @@ const CHANNEL_LABELS: Record<string, string> = {
   x: "X",
   newsletter: "Newsletter",
 };
+
+const CHANNEL_TABS: { key: "all" | "linkedin" | "x" | "newsletter"; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "x", label: "X" },
+  { key: "newsletter", label: "Newsletter" },
+];
+
+const WAITING_STATUSES: QueueStatus[] = ["queued", "ready_to_publish"];
+const FAILED_STATUSES: QueueStatus[] = ["failed", "dead_letter"];
+
+function queueStats(items: PublishingQueueOut[]) {
+  return {
+    total: items.length,
+    waiting: items.filter((q) => WAITING_STATUSES.includes(q.status)).length,
+    scheduled: items.filter((q) => q.status === "queued" && q.scheduled_for).length,
+    published: items.filter((q) => q.status === "published").length,
+    failed: items.filter((q) => FAILED_STATUSES.includes(q.status)).length,
+    cancelled: items.filter((q) => q.status === "cancelled").length,
+  };
+}
+
+function StatTile({ label, value, tone }: { label: string; value: number; tone?: "emerald" | "amber" | "red" }) {
+  const toneClass =
+    tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-700" : "text-foreground";
+  return (
+    <div className="glow-card min-w-[92px] flex-1 rounded-xl border border-surface-border bg-surface-card px-3 py-2.5">
+      <p className={`text-xl font-semibold ${toneClass}`}>{value}</p>
+      <p className="mt-0.5 text-xs text-muted">{label}</p>
+    </div>
+  );
+}
 
 function previewOf(content: string | null, max = 160): string {
   if (!content) return "";
@@ -293,6 +325,7 @@ export default function PublishingQueuePage() {
   const [items, setItems] = useState<PublishingQueueOut[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [activeChannel, setActiveChannel] = useState<(typeof CHANNEL_TABS)[number]["key"]>("all");
 
   const load = useCallback(() => {
     api
@@ -304,6 +337,12 @@ export default function PublishingQueuePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const stats = useMemo(() => queueStats(items ?? []), [items]);
+  const filteredItems = useMemo(
+    () => (items ?? []).filter((q) => activeChannel === "all" || q.channel === activeChannel),
+    [items, activeChannel]
+  );
 
   return (
     <div className="animate-fade-in-up">
@@ -329,15 +368,57 @@ export default function PublishingQueuePage() {
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
       {!items && !error && <LoadingLine label="Loading publishing queue…" />}
+
+      {items && items.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <StatTile label="Waiting to publish" value={stats.waiting} />
+          <StatTile label="Scheduled" value={stats.scheduled} />
+          <StatTile label="Published" value={stats.published} tone="emerald" />
+          <StatTile label="Failed" value={stats.failed} tone="red" />
+          <StatTile label="Cancelled" value={stats.cancelled} />
+          <StatTile label="Total" value={stats.total} />
+        </div>
+      )}
+
+      {items && items.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5 border-b border-surface-border pb-2">
+          {CHANNEL_TABS.map((tab) => {
+            const count = tab.key === "all" ? items.length : items.filter((q) => q.channel === tab.key).length;
+            const active = activeChannel === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveChannel(tab.key)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+                  active
+                    ? "bg-primary text-white"
+                    : "text-muted hover:bg-surface-card-hover hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+                <span className={`ml-1.5 text-xs ${active ? "text-white/80" : "text-muted/70"}`}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {items && items.length === 0 && (
         <div className="glow-card mt-6 rounded-xl border border-dashed border-surface-border bg-surface-card p-10 text-center">
           <p className="text-sm text-muted">Nothing queued yet.</p>
         </div>
       )}
 
-      {items && items.length > 0 && (
+      {items && items.length > 0 && filteredItems.length === 0 && (
+        <div className="glow-card mt-6 rounded-xl border border-dashed border-surface-border bg-surface-card p-10 text-center">
+          <p className="text-sm text-muted">Nothing in this channel yet.</p>
+        </div>
+      )}
+
+      {filteredItems.length > 0 && (
         <ul className="mt-6 space-y-3">
-          {items.map((q) => (
+          {filteredItems.map((q) => (
             <QueueRow key={q.id} q={q} onChanged={load} />
           ))}
         </ul>
