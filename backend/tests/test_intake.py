@@ -2,11 +2,23 @@
 
 import pytest
 
+import app.services.intake_service as intake_service
 from app.services.intake_service import create_content_request
 from shared.errors import ValidationFailure
 from shared.models import ContentRequestCreate, IntakeAttachmentIn
 
 USER_ID = "00000000-0000-0000-0000-000000000099"
+
+
+@pytest.fixture(autouse=True)
+def _stub_intake_plausibility_check(monkeypatch):
+    """These tests shouldn't make a real Claude call — check_intake_plausibility
+    is exercised on its own in test_intake_plausibility.py."""
+    monkeypatch.setattr(
+        intake_service.claude_service,
+        "check_intake_plausibility",
+        lambda **kw: {"plausible": True, "reason": "stubbed for test"},
+    )
 
 
 def test_raw_idea_only_request_succeeds(fake_db):

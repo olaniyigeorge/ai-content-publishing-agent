@@ -10,7 +10,7 @@ export const MAX_ATTACHMENTS = 10;
 
 const BARE_URL_RE = /^\s*https?:\/\/\S+\s*$/i;
 
-function wordCount(text: string): number {
+export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 

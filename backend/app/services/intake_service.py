@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 
+import claude.service as claude_service
 from app.services.intake_guards import (
     validate_attachments,
     validate_raw_idea,
@@ -8,6 +9,7 @@ from app.services.intake_guards import (
     validate_target_audience,
 )
 from app.services.upload_service import BUCKET
+from claude.outputs import require_fields
 from db.client import get_supabase
 from shared.enums import (
     JobReferenceType,
@@ -20,6 +22,24 @@ from shared.errors import ValidationFailure
 from shared.models import ContentRequestCreate, ContentRequestOut
 
 logger = logging.getLogger(__name__)
+
+
+def _check_plausibility_or_raise(raw_idea: str | None, target_audience: str) -> None:
+    """Second, non-free layer behind intake_guards.py's deterministic checks
+    — those can be beaten by any string with one vowel and a few
+    whitespace-separated tokens (see docs/work/EDGE_CASES.md), which is
+    exactly what let a real gibberish request through a full research/plan/
+    draft/evaluate run. Fails open: a Claude API/network hiccup here must
+    never block a real submission, since this is a cost-saving pre-check,
+    not a correctness guarantee."""
+    try:
+        result = claude_service.check_intake_plausibility(raw_idea=raw_idea, target_audience=target_audience)
+        require_fields(result, ["plausible", "reason"], step="check_intake_plausibility", error_cls=ValueError)
+    except Exception:
+        logger.exception("intake plausibility check failed — letting the request through")
+        return
+    if not result["plausible"]:
+        raise ValidationFailure(f"this doesn't look like a usable content idea: {result['reason']}")
 
 
 def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str) -> ContentRequestOut:
@@ -37,6 +57,9 @@ def create_content_request(body: ContentRequestCreate, submitted_by_user_id: str
     validate_target_audience(body.target_audience or "")
     validate_supporting_material(body.supporting_material)
     validate_attachments(body.attachments)
+    # Only worth the API call once the free checks already passed — no point
+    # spending on a request that's already going to be rejected for free.
+    _check_plausibility_or_raise(body.raw_idea, body.target_audience or "")
 
     db = get_supabase()
     now = datetime.now(UTC).isoformat()

@@ -10,9 +10,11 @@ import {
   MAX_ATTACHMENTS,
   MAX_IDEA_LENGTH,
   MAX_TARGET_AUDIENCE_LENGTH,
+  MIN_IDEA_WORDS,
   validateRawIdea,
   validateSourceUrl,
   validateTargetAudience,
+  wordCount,
 } from "@/lib/intake-validation";
 
 interface PendingAsset extends UploadResult {
@@ -44,6 +46,7 @@ export default function NewRequestPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const ideaError = validateRawIdea(rawIdea);
+  const ideaWordCount = wordCount(rawIdea);
   const sourceUrlErrors = sourceUrls.map(validateSourceUrl);
   const audienceError = validateTargetAudience(targetAudience);
   const filledSourceUrls = sourceUrls.map((u) => u.trim()).filter(Boolean);
@@ -161,7 +164,10 @@ export default function NewRequestPage() {
         <form onSubmit={handleSubmit} className="mt-6 space-y-5" noValidate>
           <Field
             label="Content idea"
-            hint={`${rawIdea.length}/${MAX_IDEA_LENGTH}`}
+            hint={`${rawIdea.length}/${MAX_IDEA_LENGTH} chars · ${ideaWordCount} word${ideaWordCount === 1 ? "" : "s"}${
+              ideaWordCount > 0 && ideaWordCount < MIN_IDEA_WORDS ? ` (min ${MIN_IDEA_WORDS})` : ""
+            }`}
+            hintTone={rawIdea.trim() && ideaWordCount < MIN_IDEA_WORDS ? "warn" : undefined}
             error={touched.idea ? ideaError : null}
           >
             <textarea
@@ -367,12 +373,14 @@ function inputClass(hasError: boolean): string {
 function Field({
   label,
   hint,
+  hintTone,
   error,
   optional,
   children,
 }: {
   label: string;
   hint?: string;
+  hintTone?: "warn";
   error?: string | null;
   optional?: boolean;
   children: React.ReactNode;
@@ -383,7 +391,9 @@ function Field({
         <label className="block text-sm font-medium text-foreground">
           {label} {optional && <span className="font-normal text-muted">(optional)</span>}
         </label>
-        {hint && <span className="text-xs text-muted">{hint}</span>}
+        {hint && (
+          <span className={`text-xs ${hintTone === "warn" ? "text-amber-600" : "text-muted"}`}>{hint}</span>
+        )}
       </div>
       {children}
       {error && <p className="mt-1 animate-fade-in text-xs text-red-600">{error}</p>}

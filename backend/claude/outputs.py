@@ -199,3 +199,21 @@ CLAIM_VERIFICATION_SCHEMA = {
     },
     "required": ["supports_claim", "excerpt", "reason"],
 }
+
+INTAKE_PLAUSIBILITY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "plausible": {
+            "type": "boolean",
+            "description": "True if this is a real, coherent content idea and target audience that a "
+            "content team could actually research and write about. False for gibberish, keyboard-mashed "
+            "text, or text with no discernible topic.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "One short sentence. If plausible, why (what the actual topic/audience is). "
+            "If not, what specifically makes it unusable — never a generic 'not useful'.",
+        },
+    },
+    "required": ["plausible", "reason"],
+}

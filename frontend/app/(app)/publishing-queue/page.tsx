@@ -179,6 +179,7 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
   }
 
   const share = shareUrl(q);
+  const plainPreview = q.content ? (q.content_format === "html" ? htmlToPlainText(q.content) : q.content) : null;
 
   return (
     <li className="glow-card animate-fade-in-up rounded-xl border border-surface-border bg-surface-card p-4">
@@ -195,8 +196,8 @@ function QueueRow({ q, onChanged }: { q: PublishingQueueOut; onChanged: () => vo
             <span className="block truncate text-sm font-medium text-foreground">
               {q.article_title ?? "Untitled"}
             </span>
-            {!expanded && q.content && (
-              <span className="mt-0.5 block truncate text-sm text-muted">{previewOf(q.content)}</span>
+            {!expanded && plainPreview && (
+              <span className="mt-0.5 block truncate text-sm text-muted">{previewOf(plainPreview)}</span>
             )}
           </span>
           <span className="mt-0.5 shrink-0 text-muted">

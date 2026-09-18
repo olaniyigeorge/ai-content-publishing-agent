@@ -4,17 +4,19 @@ prompt builders directly.
 """
 
 from claude.client import structured_chat
-from claude.models import model_for
+from claude.models import HAIKU, model_for
 from claude.outputs import (
     ADAPTATION_SCHEMA,
     CLAIM_VERIFICATION_SCHEMA,
     EVALUATION_SCHEMA,
+    INTAKE_PLAUSIBILITY_SCHEMA,
     PLAN_SCHEMA,
     SOURCE_SELECTION_SCHEMA,
 )
 from claude.prompts import adapt as adapt_prompts
 from claude.prompts import evaluate as evaluate_prompts
 from claude.prompts import generate as generate_prompts
+from claude.prompts import intake_check as intake_check_prompts
 from claude.prompts import plan as plan_prompts
 from claude.prompts import research as research_prompts
 from claude.prompts import verify_evidence as verify_evidence_prompts
@@ -118,6 +120,22 @@ def verify_claim_evidence(*, claim_text: str, source_title: str | None, source_u
         ),
         output_schema=CLAIM_VERIFICATION_SCHEMA,
         tool_name="verify_claim_evidence",
+    )
+
+
+def check_intake_plausibility(*, raw_idea: str | None, target_audience: str) -> dict:
+    """Runs synchronously in the intake API request (not a worker job) —
+    HAIKU directly, not model_for(), since this isn't a pipeline step in the
+    job_type enum, just a cheap pre-check ahead of one. See
+    app/services/intake_service.py for the fail-open handling around this
+    call — an API/network error here must never block a real submission."""
+    return structured_chat(
+        model=HAIKU,
+        system=intake_check_prompts.SYSTEM,
+        user_message=intake_check_prompts.build_user_message(raw_idea=raw_idea, target_audience=target_audience),
+        output_schema=INTAKE_PLAUSIBILITY_SCHEMA,
+        tool_name="check_intake_plausibility",
+        max_tokens=256,
     )
 
 
