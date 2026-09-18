@@ -18,6 +18,15 @@ _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _NUMBER = re.compile(r"\b\d[\d,]*(?:\.\d+)?%?\b")
 _WORD = re.compile(r"[a-z']+")
+_PROPER_NOUN = re.compile(r"\b[A-Z][a-zA-Z]+(?:['’][a-z]+)?\b")
+
+# Words that are capitalized for reasons unrelated to naming a publisher/
+# report (generic descriptors, sentence-position artifacts) — excluded so
+# the attribution check only fires on actual proper nouns.
+_ATTRIBUTION_STOPWORDS = {
+    "The", "A", "An", "This", "That", "It", "In", "On", "For", "With", "By", "According",
+    "Report", "Study", "Research", "Survey", "Data", "Source", "Sources", "And", "Or", "Its",
+}
 
 TREND_PHRASES = [
     r"\bincreasingly\b",
@@ -80,6 +89,20 @@ def _significant_words(text: str) -> set[str]:
     return {w for w in _WORD.findall(_strip_link_urls(text).lower()) if w not in _STOPWORDS and len(w) > 3}
 
 
+def _attribution_terms(anchor: str) -> set[str]:
+    """Proper-noun-looking words in a citation's visible link text — the
+    words a reader would read as naming *who published this* (e.g. "Adobe"
+    in "Adobe's 2026 marketing report"). Used to catch fabricated publisher
+    attribution, which citation_mismatch's any-word-overlap check misses:
+    a sentence like "According to [Adobe's 2026 marketing report](url), 8 in
+    10 marketing teams..." shares plenty of real words ("marketing",
+    "teams") with a genuinely relevant excerpt, so citation_mismatch passes
+    it — even when "Adobe" and "2026" were invented wholesale for a source
+    excerpt that carries no publisher, title, or date at all (evaluator
+    finding on request fa6c3e72, 2026-09-18)."""
+    return {w for w in _PROPER_NOUN.findall(anchor) if w not in _ATTRIBUTION_STOPWORDS and len(w) > 2}
+
+
 def validate_grounding(*, body_markdown: str, sources: list[dict]) -> dict:
     """`sources` is the same list[dict] shape passed to generate_draft (each
     needs `url`; `excerpt_selected` powers the citation-mismatch and
@@ -98,6 +121,7 @@ def validate_grounding(*, body_markdown: str, sources: list[dict]) -> dict:
     2026-09-18). Only URLs with real retrieved content count as known."""
     known_urls = {s["url"] for s in sources if s.get("url") and s.get("excerpt_selected")}
     excerpt_by_url = {s["url"]: s["excerpt_selected"] for s in sources if s.get("url") and s.get("excerpt_selected")}
+    title_by_url = {s["url"]: (s.get("title") or "") for s in sources if s.get("url")}
     violations: list[str] = []
 
     # 1. fabricated/unverified URLs — cited but never actually provided.
@@ -118,12 +142,29 @@ def validate_grounding(*, body_markdown: str, sources: list[dict]) -> dict:
         if not cited and _matches_any(ASSERTION_PHRASES, sentence):
             violations.append(f'unsupported_claim: "{sentence[:160]}"')
 
-        # 5/6. citation mismatch + quantitative paraphrase drift — only
-        # checkable when the sentence cites a known source whose excerpt we have.
-        for _anchor, url in _MARKDOWN_LINK.findall(sentence):
+        # 5/6/7. citation mismatch + quantitative paraphrase drift + fabricated
+        # attribution — only checkable when the sentence cites a known source
+        # whose excerpt we have.
+        for anchor, url in _MARKDOWN_LINK.findall(sentence):
             excerpt = excerpt_by_url.get(url)
             if not excerpt:
                 continue
+
+            # 7. fabricated attribution — a proper noun in the citation's
+            # visible text (a claimed publisher/report name) that appears
+            # neither in the source's recorded title nor in its retrieved
+            # excerpt. Catches invented publishers/report names even when
+            # the surrounding sentence otherwise overlaps enough with the
+            # excerpt to pass citation_mismatch, and even when the claim
+            # carries no number for quantitative_paraphrase_drift to catch.
+            real_title_words = {w.lower() for w in _PROPER_NOUN.findall(title_by_url.get(url, ""))}
+            excerpt_lower = excerpt.lower()
+            for term in _attribution_terms(anchor):
+                if term.lower() not in real_title_words and term.lower() not in excerpt_lower:
+                    violations.append(
+                        f'fabricated_attribution: citation text "{anchor}" names "{term}" for {url}, but '
+                        f"neither that source's recorded title nor its retrieved excerpt confirms it"
+                    )
             sentence_words = _significant_words(sentence)
             excerpt_words = _significant_words(excerpt)
             if sentence_words and not (sentence_words & excerpt_words):

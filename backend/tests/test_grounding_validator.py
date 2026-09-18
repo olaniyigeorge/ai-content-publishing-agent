@@ -115,6 +115,53 @@ def test_hedged_claim_with_no_citation_does_not_trip_trend_or_causal_checks():
     assert result["passed"] is True
 
 
+def test_fabricated_publisher_attribution_is_flagged():
+    """Evaluator finding on request fa6c3e72 (2026-09-18): a source excerpt
+    with no publisher, title, or date was cited as "Adobe's 2026 marketing
+    report." citation_mismatch alone missed this — the sentence shares real
+    words ("marketing", "teams") with the excerpt, so it isn't flagged just
+    for having no overlap. The fabricated proper noun itself must be caught."""
+    sources = [
+        {
+            "id": "s3",
+            "url": "https://business.adobe.com/resources/some-report.html",
+            "title": "",
+            "excerpt_selected": (
+                "More than 8 out of 10 marketing teams missed an opportunity last quarter because "
+                "they could not respond in time, and only 7% have embedded AI in ways that deliver "
+                "measurable business results."
+            ),
+        }
+    ]
+    body = (
+        "According to [Adobe's 2026 marketing report](https://business.adobe.com/resources/some-report.html), "
+        "8 in 10 marketing teams missed an opportunity last quarter."
+    )
+    result = validate_grounding(body_markdown=body, sources=sources)
+    assert result["passed"] is False
+    assert any("fabricated_attribution" in v and "Adobe" in v for v in result["violations"])
+
+
+def test_attribution_matching_the_recorded_title_is_not_flagged():
+    """A citation naming a source that genuinely matches its recorded title
+    should not be treated as fabricated."""
+    sources = [
+        {
+            "id": "s4",
+            "url": "https://www.stateof.ai/",
+            "title": "State of AI Report 2025",
+            "excerpt_selected": "44 percent of American businesses now pay for AI tools.",
+        }
+    ]
+    body = (
+        "The [State of AI Report](https://www.stateof.ai/) found that 44 percent of American businesses "
+        "now pay for AI tools."
+    )
+    result = validate_grounding(body_markdown=body, sources=sources)
+    assert result["passed"] is True
+    assert result["violations"] == []
+
+
 def test_digits_in_the_cited_url_itself_do_not_trip_quantitative_drift():
     """A real, recurring false positive: a URL slug/article-id containing
     digits (e.g. '.../article/158957-resource-poor-risk-rich...') was being

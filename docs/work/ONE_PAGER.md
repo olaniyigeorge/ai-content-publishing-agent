@@ -1,61 +1,62 @@
-# AI Content Research and Publishing Agent
+# AI Content Research and Publishing Agent — Handover Guide
 
 **Owner:** Olaniyi George (olaniyigeorge77@gmail.com)
 **Live app:** https://ai-content-publishing-agent.vercel.app/
-**API:** https://ai-content-publishing-agent.onrender.com
 **Repo:** https://github.com/olaniyigeorge/ai-content-publishing-agent
-**Last updated:** 2026-09-17
+**Last updated:** 2026-09-18
 
 ---
 
-## Purpose & Success Criteria
+## What this is for
 
-**Who it's for:** a content manager at a marketing agency (modeled on Koya Talent's content team) who publishes across LinkedIn, X, and an email newsletter.
+If you manage content for LinkedIn, X, and a newsletter, you know the drill: get an idea, research it, write a full article, rewrite it three different ways for three platforms, check your own work, then publish. Every piece takes the same amount of manual effort, and quality depends on who happened to write it that day.
 
-**What problem existed:** producing one piece of content meant brainstorming, researching, writing a full SEO article by hand, manually rewriting it three different ways per channel, self-reviewing, then publishing — all manual effort, repeated identically for every new piece, with quality and tone depending on who happened to write it that day.
+This tool takes that idea off your desk and hands you back a finished, checked, ready-to-post set of content — while keeping you as the person who makes the final call.
 
-**What it does:** takes a raw idea or a source URL from a content manager and runs it through research and source retrieval, source selection, planning, drafting, self-evaluation against a rubric, automatic revision of weak drafts (up to a cap), then adapts the approved article into LinkedIn, X, and newsletter formats. Nothing reaches the publishing queue without an explicit human approval.
-
-**What changes if it works:** the bottleneck moves from *writing* to *reviewing*. A content manager spends their time judging and approving finished-looking drafts instead of producing them from scratch, and every piece goes through the same grounded, rubric-checked process regardless of who submitted the request.
-
-**How success is measured:** every claim in an approved piece traces to a real, reviewed source; every channel output actually follows that channel's formatting rules (not the same text reformatted three times); nothing is approved or queued without a human decision; and cost per request stays visible and bounded (typically $0.03–$0.25 depending on how many revision cycles a request needs).
+**Your starting point:** a rough idea, or a link to an article you want to base something on.
+**Your end point:** a reviewed article plus a LinkedIn post, an X post, and a newsletter draft, all sitting in a queue waiting for you to say "go."
+**What you're trading:** you stop writing from a blank page and start reviewing finished-looking drafts. Nothing reaches your queue without you personally approving it.
 
 ---
 
-## How It Works
+## How it gets you there
 
-1. A content manager submits a request: a raw idea and/or a source URL, plus a target audience.
-2. **Research:** the system scrapes any provided URLs (via Firecrawl) and records each one's usable/unusable status with a specific reason — a failed or unusable source is never silently treated as real grounding material.
-3. **Source selection:** Claude (Haiku) picks which retrieved content is actually usable and why.
-4. **Planning:** Claude (Haiku) outlines the article from the selected sources.
-5. **Generation:** Claude (Sonnet) writes the article, following SEO rules (primary keyword in title/first 100 words, H1/H2/H3 structure, source-grounded claims).
-6. **Evaluation:** Claude (Sonnet) scores the draft against the content rubric (topic relevance, source grounding, factual consistency, audience fit, tone, SEO fit, clarity, completeness) and returns pass/revise/reject plus specific flagged claims and recommended changes.
-7. **Revision loop:** weak drafts are automatically revised, up to a fixed attempt cap. A deterministic guard stops the loop early and escalates to a human if a draft has no real source material behind it — revising the wording can't fix a grounding problem.
-8. **Human review:** a person approves, rejects, requests revision, or hand-edits the draft. This is a real gate — the system cannot reach a publishable/queued state without it.
-9. **Channel adaptation:** the approved article is adapted into LinkedIn (PAS structure), X (short, hook-first, ≤280 chars), and newsletter (250–600 words, subject line, CTA) formats. Real character/word counts are recomputed server-side — a model's own "this passes" claim is overridden if the computed check fails.
-10. **Publishing queue:** approved, correctly-formatted content moves into a queue with a clearly labeled state (queued/ready-to-publish). **v1 does not post to real LinkedIn, X, or email platforms** — this is an internal queue, stated here explicitly rather than left to be discovered later.
+Think of it as five people doing one job in sequence, each checking the last one's work:
 
-Every stage writes to an append-only event log, so a failure at any step is visible (what failed, why) rather than silent.
+1. **You submit a request.** A topic, or a link, plus who it's for (e.g. "heads of content at agencies"). You can attach files or extra links too.
 
----
+2. **It researches.** If you gave it a link, it reads that page. If you didn't, it goes and finds real, current sources on its own — and tells you honestly how confident it is in each one. It never pretends to have a source it doesn't.
 
-## How to Use It
+3. **It plans, then writes.** It outlines the article from what it found, then writes a full draft — following SEO rules (right keywords, proper headings) and tying every claim back to something it actually read.
 
-1. Go to https://ai-content-publishing-agent.vercel.app/ and log in with an allowlisted email (passwordless — a one-time code is emailed to you).
-2. Click "New Request." Enter a content idea and/or one or more source URLs, and a target audience. Optionally attach supporting files/images.
-3. Submit. The request page shows live pipeline progress (researching → planning → drafting → evaluating).
-4. Once a draft is ready, open the request to review: read the draft, check which sources it's attributed to, and read the evaluation notes.
-5. Approve, reject, request a revision, or hand-edit the draft.
-6. Once approved, open the channel adaptations tab to see the LinkedIn, X, and newsletter versions.
-7. Move approved content to the publishing queue from the request page.
+4. **It checks its own work.** A second AI pass grades the draft against a real rubric — is it accurate, on-topic, well-sourced, readable — and scores it. If the draft is weak, the system rewrites it automatically, up to a few tries. You can see exactly what changed and why between versions, not just the final result.
+
+5. **You decide.** You read the draft, see which sources back it up and what the AI flagged as weak, and you approve it, reject it, ask for a revision, or edit it yourself by hand. **Nothing moves forward without your explicit approval** — the system cannot publish or queue anything on its own.
+
+6. **It adapts the approved piece for each channel.** Once you approve, it automatically rewrites the article into a LinkedIn post, an X post, and a newsletter — each one actually following that platform's own rules (character limits, hashtag limits, tone), not just the same text pasted three times. If a rewrite breaks a platform's rules, it's caught and marked failed instead of slipping through.
+
+7. **It lands in your publishing queue.** Approved, correctly-formatted content sits in a clearly labeled queue — ready to publish, not yet posted. **Important:** this version doesn't actually post to LinkedIn, X, or your email platform for you yet — it prepares everything and hands you a queue you can act on, or plug into your real posting tools later.
+
+Every step along the way is logged, so if anything goes wrong — a source can't be reached, a draft can't clear review — you'll see exactly what happened and why, in plain language, not a technical error message.
 
 ---
 
-## Appendix — Assumptions, Limitations, Known Trade-offs
+## How to use it, step by step
 
-- **"Publish" means queued, not posted.** v1 has no real LinkedIn/X/email integration. This is a deliberate scope decision for this build, not a hidden gap.
-- **Intake validation is a deterministic heuristic, not a semantic judgment.** It catches empty, too-short, and obviously-gibberish input for free, before any AI cost is spent — but it can be beaten by adversarial input (e.g. one added character defeats a no-vowel check). The real backstop is the generation step itself, which is instructed to refuse rather than fabricate when it has nothing real to work with, so the worst case for bad input is a few cents spent on an honest refusal, not a confident-looking fabricated article.
-- **Model routing is cost-aware, not uniform.** Sonnet 5 for the two quality-sensitive steps (drafting, evaluation); Haiku 4.5 for research, planning, and channel adaptation (closer to structured extraction than original writing). Full reasoning is in `backend/claude/models.py`.
-- **Single-process worker.** One slow job can delay the rest of the queue. Acceptable at this scale; would need horizontal workers at real production volume.
-- **No admin UI for the access allowlist yet** — managed directly via the backend's `/auth/access-rules` endpoints or direct database inserts. Fine for a small reviewer team; would need a real admin role for a larger one.
-- **Known, not-yet-implemented improvement:** the revision loop doesn't yet classify *why* an evaluation failed before deciding whether another attempt can plausibly fix it — a source-grounding failure and a fixable wording issue currently consume the same revision budget, except for the one specific case (zero usable sources) that already has a dedicated early-exit guard.
+1. Go to the live app link above and log in with your email — you'll get a one-time code by email, no password needed.
+2. Click **"New Request."** Type your idea and/or paste a source link, add your target audience, and attach any files if you have them.
+3. Submit, and watch the page update live as it researches, plans, and drafts.
+4. Once a draft is ready, open it. Read the article, check which sources it used and why, and read the AI's own notes on where it's weak.
+5. Approve it, reject it, ask for a rewrite, or edit it directly yourself.
+6. Once approved, open the channel tab to see your LinkedIn, X, and newsletter versions.
+7. Move the approved content into your publishing queue from the same page.
+
+---
+
+## Good to know before you rely on this
+
+- **"Publish" means queued and ready, not posted.** This version stops one step short of actually pushing to LinkedIn/X/email — it hands you a finished, approved queue instead.
+- **If you give it a weak or vague idea, it will say so rather than guess.** A one-line, unclear idea gets flagged and, if there's truly nothing to work from, the system refuses to invent a confident-sounding article out of nothing.
+- **Model choice is deliberately mixed, not one-size-fits-all.** The two steps where quality matters most — writing the article and grading it — use the strongest available AI model, since the grading step is the one thing standing between a bad draft and your desk. Research, planning, and reformatting use a faster, cheaper model, since those are closer to organizing information than original judgment.
+- **A known gap:** if you ask for a rewrite on a channel post (say, X) twice in quick succession, both requests currently run instead of the system catching the duplicate — it won't create a mess, but it will cost a bit of wasted AI usage. Rewriting a full article already has this protection; the channel-level version doesn't yet.
+- **Cost stays visible.** Each request typically costs a few cents to a bit over a dollar in AI usage, depending on how many revision rounds it needs — you can always see what a request has cost before deciding whether to push it further.
