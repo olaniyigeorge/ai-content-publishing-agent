@@ -26,6 +26,10 @@ MANUAL_OVERRIDE_STATUSES = {
     QueueStatus.CANCELLED.value,
 }
 
+# Items still waiting on an actual publish attempt — surfaced first in the
+# queue view so "what's next" doesn't get buried under already-resolved rows.
+WAITING_TO_PUBLISH_STATUSES = {QueueStatus.QUEUED.value, QueueStatus.READY_TO_PUBLISH.value}
+
 
 def _enrich(queue_rows: list[dict]) -> list[dict]:
     """Denormalize channel/content/title onto each queue row with the same
@@ -69,6 +73,10 @@ def _enrich(queue_rows: list[dict]) -> list[dict]:
 @router.get("", response_model=list[PublishingQueueOut])
 def get_queue(user: dict = Depends(get_current_user)) -> list[dict]:
     rows = get_supabase().table("publishing_queue").select("*").order("created_at", desc=True).execute().data
+    # Waiting-to-publish items first (newest-first within that group), then
+    # everything already resolved or in flight — sort is stable so the
+    # created_at ordering from the query above is preserved within each group.
+    rows.sort(key=lambda r: r["status"] not in WAITING_TO_PUBLISH_STATUSES)
     return _enrich(rows)
 
 

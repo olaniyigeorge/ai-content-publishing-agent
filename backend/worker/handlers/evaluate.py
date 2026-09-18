@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import claude.service as claude_service
 from app.config import get_settings
+from app.email import send_review_ready_email
 from app.services.regeneration_requirements import build_regeneration_requirements
 from claude.models import OPUS
 from claude.outputs import require_fields
@@ -237,6 +238,7 @@ def handle_evaluate(job: dict) -> None:
         db.table("content_requests").update(
             {"status": RequestStatus.IN_REVIEW.value, "updated_at": datetime.now(UTC).isoformat()}
         ).eq("id", request_id).execute()
+        send_review_ready_email(request_id, request_row.get("raw_idea"))
         if at_cap and not passed:
             db.table("stage_events").insert(
                 {

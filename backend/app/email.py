@@ -41,3 +41,39 @@ def send_otp_email(email: str, code: str) -> None:
         )
     except Exception:
         logger.exception("failed to send OTP email to %s", email)
+
+
+def send_review_ready_email(content_request_id: str, raw_idea: str | None) -> None:
+    """Notify the reviewer inbox that a content request just landed in
+    in_review and is waiting on a human decision."""
+    settings = get_settings()
+
+    if not settings.reviewer_notification_email:
+        logger.warning(
+            "REVIEWER_NOTIFICATION_EMAIL not set — skipping review-ready email for request %s", content_request_id
+        )
+        return
+
+    if not settings.resend_api_key:
+        logger.warning(
+            "RESEND_API_KEY not set — skipping review-ready email for request %s", content_request_id
+        )
+        return
+
+    resend.api_key = settings.resend_api_key
+    subject_idea = raw_idea or "(untitled request)"
+    try:
+        resend.Emails.send(
+            {
+                "from": f"{settings.email_from_name} <{settings.email_from_address}>",
+                "to": [settings.reviewer_notification_email],
+                "subject": f"Ready for review: {subject_idea}",
+                "html": (
+                    f"<p>A content request is waiting for review:</p>"
+                    f"<p><strong>{subject_idea}</strong></p>"
+                    f"<p>Request ID: {content_request_id}</p>"
+                ),
+            }
+        )
+    except Exception:
+        logger.exception("failed to send review-ready email for request %s", content_request_id)

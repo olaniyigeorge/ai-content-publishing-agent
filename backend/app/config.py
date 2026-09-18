@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     resend_api_key: str
     email_from_address: str = "email@from.com"
     email_from_name: str = "Koya Talent"
+    reviewer_notification_email: str = ""
+    """Where "content ready for review" emails go. There's no per-request
+    reviewer assignment in this system (any logged-in user can review) — this
+    is a single inbox that gets notified whenever a request reaches
+    in_review, not a lookup against a specific user."""
 
     environment: str = "development"
     cors_allow_origins: str = "http://localhost:3000"
