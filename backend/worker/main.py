@@ -12,6 +12,7 @@ import traceback
 from datetime import UTC, datetime
 
 from app.config import get_settings
+from claude.errors import friendly_message, is_retryable
 from claude.usage import usage_context
 from db.client import get_supabase
 from shared.enums import (
@@ -108,7 +109,13 @@ def process_one_job(job: dict) -> None:
         db.table("jobs").update({"status": JobStatus.SUCCEEDED.value}).eq("id", job["id"]).execute()
     except Exception as exc:  # noqa: BLE001 — every failure must be captured, not crash the loop
         error = f"{exc}\n{traceback.format_exc(limit=3)}"
-        outcome = on_failure(attempts=job["attempts"], max_attempts=job["max_attempts"], error=str(exc))
+        user_facing_error = friendly_message(exc)
+        outcome = on_failure(
+            attempts=job["attempts"],
+            max_attempts=job["max_attempts"],
+            error=str(exc),
+            retryable=is_retryable(exc),
+        )
         db.table("jobs").update(
             {
                 "status": JobStatus.FAILED.value if outcome["exhausted"] else JobStatus.PENDING.value,
@@ -136,12 +143,12 @@ def process_one_job(job: dict) -> None:
                         "will_retry": not outcome["exhausted"],
                         "next_attempt_at": outcome["next_attempt_at"],
                     },
-                    "error_message": str(exc),
+                    "error_message": user_facing_error,
                 }
             ).execute()
 
         if job["job_type"] == JobType.PUBLISH.value:
-            _mirror_publish_failure(job, outcome["exhausted"], str(exc), outcome["next_attempt_at"])
+            _mirror_publish_failure(job, outcome["exhausted"], user_facing_error, outcome["next_attempt_at"])
         elif request_id and outcome["exhausted"]:
             # Exhausting retries wrote a FAILED stage_events row and left
             # jobs.status FAILED, but content_requests.status was never

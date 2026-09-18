@@ -794,6 +794,7 @@ const PHASES: { key: string; label: string }[] = [
   { key: "planning", label: "Planning" },
   { key: "drafting", label: "Drafting" },
   { key: "review", label: "Review" },
+  { key: "adapting", label: "Adapting" },
   { key: "publishing", label: "Publishing" },
 ];
 
@@ -809,10 +810,13 @@ const STATUS_PHASE_INDEX: Record<string, number> = {
   revising: 3,
   in_review: 4,
   rejected: 4,
+  // "approved" is the brief moment between the human decision and the
+  // adapt job actually running (review_service.py enqueues ADAPT, then
+  // flips status to "adapting") — same node as "adapting" itself.
   approved: 5,
   adapting: 5,
-  queued: 5,
-  published: 5,
+  queued: 6,
+  published: 6,
   // "failed" can happen at several points; drafting is the most common one
   // (an exhausted revision loop), so it's the best single-node approximation
   // — the timeline below has the actual stage it failed at.

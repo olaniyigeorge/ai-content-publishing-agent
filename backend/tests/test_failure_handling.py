@@ -23,6 +23,15 @@ def test_on_failure_exhausts_at_max_attempts():
     assert outcome["next_attempt_at"] is None
 
 
+def test_on_failure_exhausts_immediately_when_not_retryable_even_on_first_attempt():
+    """A permanent error (claude/errors.py — e.g. exhausted billing credit)
+    must not wait through the same exponential backoff a transient error
+    gets, since retrying it can never succeed."""
+    outcome = on_failure(attempts=1, max_attempts=3, error="credit balance too low", retryable=False)
+    assert outcome["exhausted"] is True
+    assert outcome["next_attempt_at"] is None
+
+
 def test_claim_functions_use_for_update_skip_locked():
     """EDGE_CASES.md #60: two workers must not claim the same row. This is a
     smoke check that the migration actually uses the locking clause — a
